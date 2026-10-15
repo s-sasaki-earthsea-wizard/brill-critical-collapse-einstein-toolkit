@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
+# Brill wave critical collapse -- Einstein Toolkit environment
+# =================================================================
+# Usage:
+#   make docker-build   # overlay build on top of BASE_IMAGE (minutes)
+#   make docker-up      # start in the background (with Jupyter Lab)
+#   make docker-shell   # bash inside the container
+#   make docker-down    # stop
+#
+# Settings can be overridden in .env (see .env.example).
+
+services:
+  et:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-gw230529-et:local}
+    image: brill-collapse-et:local
+    container_name: brill-collapse-et
+
+    # Shared memory for MPICH inter-process communication.
+    shm_size: ${CONTAINER_SHM_SIZE:-2gb}
+
+    # Restrict the container to a CPU set. See .env.example for the
+    # P-core / E-core / LP E-core layout of this host.
+    cpuset: ${CONTAINER_CPUSET:-0-15}
+
+    # Hard memory ceiling with swap disabled (memswap_limit equal to
+    # mem_limit), so a runaway run is OOM-killed inside the container
+    # rather than pushing the host into swap. The bisection runner aborts
+    # a run earlier, at a configurable fraction of this limit.
+    mem_limit: ${CONTAINER_MEM_LIMIT:-48g}
+    memswap_limit: ${CONTAINER_MEM_LIMIT:-48g}
+
+    # Published Jupyter Lab port (8888: GW150914, 8889: GW230529).
+    ports:
+      - "${JUPYTER_PORT:-8890}:8888"
+
+    volumes:
+      # Repository root as the working directory: templates, scripts and
+      # tests stay editable from the host.
+      - ./:/home/etuser/work
+
+      # Campaign output on the local SSD rather than the NAS-backed
+      # repository. Defaults to ${HOME}/brill-collapse-output.
+      - ${SIM_OUTPUT_DIR:-${HOME}/brill-collapse-output}:/home/etuser/simulations
+
+    working_dir: /home/etuser/work
+
+    stdin_open: true
+    tty: true

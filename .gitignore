@@ -1,0 +1,28 @@
+# Claude Code working records (not versioned)
+.claude/
+.claude-notes/
+.claude-screenshots/
+
+# Local configuration
+.env
+
+# Run campaigns, simulation output and analysis products.
+# Campaigns normally live under SIM_OUTPUT_DIR on the host SSD; these
+# entries only catch output that lands in the repository by accident.
+runs/
+simulations/
+reports/
+_logs/
+nohup*.out
+
+# Reference documents
+*.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+.vscode/

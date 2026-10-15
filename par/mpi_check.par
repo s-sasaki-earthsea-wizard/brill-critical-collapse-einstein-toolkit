@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
+# MPI communicator sanity check (copied from the GW230529 project)
+# =================================================================
+# Minimal Carpet setup that exits immediately after initialisation.
+# Its only purpose is to make Carpet print
+#
+#     INFO (Carpet): Carpet is running on <N> processes
+#
+# so that `make docker-check` can assert that the MPI ranks actually
+# joined a single communicator.
+#
+# A successful MPI_Init is NOT sufficient evidence: when the binary is
+# linked against two MPI stacks at once, Open MPI's MPI_Init silently
+# falls back to singleton initialisation and every rank reports
+# "running on 1 processes" while appearing to start up normally.
+
+ActiveThorns = "
+  Boundary
+  Carpet
+  CarpetLib
+  CarpetReduce
+  CartGrid3D
+  CoordBase
+  InitBase
+  IOUtil
+  SymBase
+  Time
+"
+
+Cactus::cctk_itlast = 0
+
+CartGrid3D::type = "coordbase"
+
+CoordBase::domainsize = "minmax"
+CoordBase::xmin = -1.0
+CoordBase::ymin = -1.0
+CoordBase::zmin = -1.0
+CoordBase::xmax =  1.0
+CoordBase::ymax =  1.0
+CoordBase::zmax =  1.0
+CoordBase::dx   =  0.25
+CoordBase::dy   =  0.25
+CoordBase::dz   =  0.25
+
+CoordBase::boundary_size_x_lower = 1
+CoordBase::boundary_size_y_lower = 1
+CoordBase::boundary_size_z_lower = 1
+CoordBase::boundary_size_x_upper = 1
+CoordBase::boundary_size_y_upper = 1
+CoordBase::boundary_size_z_upper = 1
+
+Carpet::domain_from_coordbase   = yes
+Carpet::max_refinement_levels   = 1
+
+IO::out_dir = "."
