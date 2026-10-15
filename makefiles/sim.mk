@@ -39,10 +39,12 @@ RUNNER_ARGS = \
 
 # Refuse to start while another cactus_sim is running in the container:
 # two concurrent runs halve the speed of both and break the ETA, and the
-# GW150914 project lost a run to exactly this.
+# GW150914 project lost a run to exactly this. Zombies (state Z) are
+# ignored: they are dead ranks of an aborted run that nobody reaped.
 .PHONY: _precheck-idle
 _precheck-idle:
-	@running=$$($(COMPOSE) exec -T et pgrep -f cactus_sim 2>/dev/null | wc -l | tr -d '\r '); \
+	@running=$$($(COMPOSE) exec -T et ps -eo stat=,comm= 2>/dev/null \
+		| awk '$$2 == "cactus_sim" && $$1 !~ /^Z/' | wc -l | tr -d '\r '); \
 	if [ "$$running" != "0" ]; then \
 		echo "[error] $$running cactus_sim process(es) already running in $(CONTAINER_NAME)."; \
 		echo "        Refusing to start a second run. Check with 'make status'."; \

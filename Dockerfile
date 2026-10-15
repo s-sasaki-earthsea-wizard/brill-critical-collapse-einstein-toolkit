@@ -15,11 +15,10 @@
 # Build the base image first, in the GW230529 repository:
 #   cd ../gw230529-einstein-toolkit && make docker-build
 #
-# TODO(initial-data): IDBrillData solves the Hamiltonian constraint with
-# the PUGH-era EllBase/EllSOR solver, which is unigrid-only and cannot
-# solve on a Carpet refinement hierarchy. Whatever replaces it (a small
-# custom thorn, CT_MultiLevel coefficients, or an imported 2D solution)
-# gets added here as an incremental Cactus rebuild on top of the base.
+# The project's own thorns (thorns/, e.g. BrillCollapse/BrillPsiTable,
+# which loads the initial data solved by scripts/brill_initial_data.py)
+# are compiled into the base configuration incrementally: the base keeps
+# its object files, so this step takes well under a minute.
 
 ARG BASE_IMAGE=gw230529-et:local
 FROM ${BASE_IMAGE}
@@ -31,6 +30,15 @@ FROM ${BASE_IMAGE}
 # any error. The runner also passes it to every rank explicitly.
 ENV OMP_NUM_THREADS=1
 ENV PATH=/home/etuser/Cactus/exe:${PATH}
+
+ARG PROJECT_THORNS="BrillCollapse/BrillPsiTable"
+COPY --chown=etuser:etuser thorns/ /home/etuser/Cactus/arrangements/
+RUN cd /home/etuser/Cactus \
+    && for thorn in ${PROJECT_THORNS}; do \
+         grep -qx "${thorn}" configs/sim/ThornList || echo "${thorn}" >> configs/sim/ThornList; \
+       done \
+    && make sim PROMPT=no -j"$(getconf _NPROCESSORS_ONLN)" > /tmp/build-project-thorns.log 2>&1 \
+       || (tail -50 /tmp/build-project-thorns.log; exit 1)
 
 WORKDIR /home/etuser/work
 
