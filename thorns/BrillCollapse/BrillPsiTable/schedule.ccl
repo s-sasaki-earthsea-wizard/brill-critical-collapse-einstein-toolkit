@@ -1,0 +1,27 @@
+# Schedule definitions for thorn BrillPsiTable
+
+if (CCTK_Equals(initial_data, "brill_psi_table"))
+{
+  STORAGE: psi
+
+  schedule BrillPsiTable_Load at CCTK_PARAMCHECK
+  {
+    LANG: C
+    OPTIONS: global
+  } "Read and validate the conformal factor table"
+
+  schedule BrillPsiTable_InitialData in ADMBase_InitialData
+  {
+    LANG: C
+    READS: grid::coordinates(everywhere)
+    WRITES: ADMBase::metric(everywhere)
+    WRITES: ADMBase::curv(everywhere)
+    WRITES: BrillPsiTable::psi(everywhere)
+  } "Set the Brill wave metric from the table"
+
+  schedule BrillPsiTable_Free at CCTK_TERMINATE
+  {
+    LANG: C
+    OPTIONS: global
+  } "Release the conformal factor table"
+}

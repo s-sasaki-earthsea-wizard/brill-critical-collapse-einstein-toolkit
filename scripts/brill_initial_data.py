@@ -65,6 +65,8 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 SOLVER_VERSION = "1"
+TABLE_FORMAT = "brill-psi-table"
+TABLE_FORMAT_VERSION = 1
 
 # 6th-order centred finite-difference weights for offsets -3..3.
 D1_WEIGHTS = np.array([-1.0 / 60, 3.0 / 20, -3.0 / 4, 0.0, 3.0 / 4, -3.0 / 20, 1.0 / 60])
@@ -419,6 +421,65 @@ def adm_mass(solution: Solution, far_zone: Tuple[float, float] = (20.0, 200.0)) 
 
 
 # ---------------------------------------------------------------------
+# Table interpolation (mirrors thorns/BrillCollapse/BrillPsiTable)
+# ---------------------------------------------------------------------
+
+
+def _lagrange_weights(x: np.ndarray, first: np.ndarray, points: int) -> np.ndarray:
+    """Lagrange weights at x for the integer nodes first..first+points-1."""
+    nodes = first[:, None] + np.arange(points)[None, :]
+    weights = np.ones((x.size, points))
+    for k in range(points):
+        for m in range(points):
+            if m != k:
+                weights[:, k] *= (x - nodes[:, m]) / float(k - m)
+    return weights
+
+
+def evaluate_table(
+    u: np.ndarray,
+    scale: float,
+    r: np.ndarray,
+    theta: np.ndarray,
+    points: int = 8,
+    parity_s_upper: float = -1.0,
+) -> np.ndarray:
+    """Interpolate a u table at (r, theta) exactly as the Cactus thorn does.
+
+    Tensor-product Lagrange interpolation in (s, theta) with ``points``
+    nodes per direction centred on the target, table ghosts filled by
+    parity (even at the lower faces and at theta = pi/2, ``parity_s_upper``
+    at s = 1).
+
+    Args:
+        u: Table on the cell-centred grid, shape (n_s, n_theta).
+        scale: L in r = L tan(pi s / 2).
+        r: Radii.
+        theta: Polar angles in [0, pi/2].
+        points: Stencil width per direction (even).
+        parity_s_upper: Parity of u about s = 1.
+
+    Returns:
+        u at the points, shaped like ``r``.
+    """
+    n_s, n_t = u.shape
+    r_flat = np.asarray(r, dtype=float).ravel()
+    t_flat = np.asarray(theta, dtype=float).ravel()
+    xs = s_of_radius(r_flat, scale) * n_s - 0.5
+    xt = t_flat / (0.5 * math.pi / n_t) - 0.5
+    half = points // 2
+    fs = np.floor(xs).astype(int) - half + 1
+    ft = np.floor(xt).astype(int) - half + 1
+    ws = _lagrange_weights(xs, fs, points)
+    wt = _lagrange_weights(xt, ft, points)
+    offsets = np.arange(points)
+    i, ps = _mirror(fs[:, None] + offsets[None, :], n_s, parity_s_upper)
+    j, pt = _mirror(ft[:, None] + offsets[None, :], n_t, 1.0)
+    values = u[i[:, :, None], j[:, None, :]] * ps[:, :, None] * pt[:, None, :]
+    return np.einsum("pa,pb,pab->p", ws, wt, values).reshape(np.shape(r))
+
+
+# ---------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------
 
@@ -442,17 +503,21 @@ def write_table(path: Path, solution: Solution, masses: MassEstimates) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(str(path), "w") as handle:
         dataset = handle.create_dataset("u", data=solution.u)
-        dataset.attrs["description"] = "psi - 1 on the cell-centred compactified polar grid"
+        # Strings are fixed-length ASCII so that the C reader can use them
+        # without variable-length string handling.
+        dataset.attrs["description"] = np.bytes_("psi - 1 on the cell-centred compactified polar grid")
         attrs = handle.attrs
-        attrs["format"] = "brill-psi-table"
-        attrs["format_version"] = 1
-        attrs["solver_version"] = SOLVER_VERSION
-        attrs["created_at"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-        attrs["family"] = "holz"
+        attrs["format"] = np.bytes_(TABLE_FORMAT)
+        attrs["format_version"] = TABLE_FORMAT_VERSION
+        attrs["solver_version"] = np.bytes_(SOLVER_VERSION)
+        attrs["created_at"] = np.bytes_(
+            datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+        )
+        attrs["family"] = np.bytes_("holz")
         attrs["amplitude"] = params.amplitude
         attrs["sigma"] = params.sigma
         attrs["exponent_factor"] = params.exponent_factor
-        attrs["mapping"] = "r = L tan(pi s / 2)"
+        attrs["mapping"] = np.bytes_("r = L tan(pi s / 2)")
         attrs["scale_L"] = grid.scale
         attrs["n_s"] = grid.n_s
         attrs["n_theta"] = grid.n_theta

@@ -95,6 +95,32 @@ def test_flux_mass_of_manufactured_monopole():
     assert bid.adm_mass(solution).flux == pytest.approx(2.0, abs=1e-8)
 
 
+# --- table interpolation -------------------------------------------------
+
+
+def manufactured_exact(r, theta):
+    p2 = 0.5 * (3.0 * np.cos(theta) ** 2 - 1.0)
+    return erf(r) / r + r ** 2 * np.exp(-r ** 2) * p2
+
+
+def test_table_interpolation_of_a_known_function():
+    grid = bid.Grid(256, 32, 2.0)
+    table, _ = manufactured(grid)
+    rng = np.random.default_rng(7)
+    r = np.concatenate([rng.uniform(1e-3, 3.0, 200), rng.uniform(3.0, 60.0, 100), [1e-9]])
+    theta = rng.uniform(0.0, 0.5 * math.pi, r.size)
+    theta[-1] = 0.0
+    approx = bid.evaluate_table(table, grid.scale, r, theta)
+    assert np.max(np.abs(approx - manufactured_exact(r, theta))) < 1e-8
+
+
+def test_table_interpolation_is_exact_at_nodes():
+    grid = bid.Grid(64, 16, 2.0)
+    table, _ = manufactured(grid)
+    r, theta = np.meshgrid(grid.r, grid.theta, indexing="ij")
+    assert np.allclose(bid.evaluate_table(table, grid.scale, r, theta), table, rtol=0.0, atol=1e-13)
+
+
 # --- Brill data ----------------------------------------------------------
 
 
@@ -154,7 +180,7 @@ def test_write_table_round_trip(tmp_path):
     bid.write_table(path, solution, masses)
     with h5py.File(str(path), "r") as handle:
         assert np.array_equal(handle["u"][...], solution.u)
-        assert handle.attrs["format"] == "brill-psi-table"
+        assert handle.attrs["format"] == b"brill-psi-table"
         assert handle.attrs["exponent_factor"] == 2
         assert handle.attrs["n_s"] == 64 and handle.attrs["n_theta"] == 16
         assert handle.attrs["scale_L"] == 2.0

@@ -1,0 +1,11 @@
+# Interface definition for thorn BrillPsiTable
+
+IMPLEMENTS: BrillPsiTable
+INHERITS: ADMBase grid
+
+PRIVATE:
+
+CCTK_REAL psi TYPE=GF TIMELEVELS=1 TAGS='tensortypealias="Scalar" Prolongation="none" checkpoint="no"'
+{
+  psi
+} "Conformal factor interpolated from the table (diagnostic output only)"
