@@ -60,6 +60,20 @@ single-run: _precheck-idle ## Run one amplitude (AMP=...) for smoke tests and be
 	@test -n "$(AMP)" || (echo "Usage: make single-run AMP=<amplitude>" && exit 1)
 	$(COMPOSE) exec -T et $(RUNNER) $(RUNNER_ARGS) --single $(AMP)
 
+# Initial data tables: psi on the compactified polar grid, read by the
+# BrillPsiTable thorn. Written to SIM_OUTPUT_DIR/tables.
+ID_N_S     ?= 512
+ID_N_THETA ?= 64
+ID_SCALE   ?= 2.0
+TABLES_DIR := /home/etuser/simulations/tables
+
+.PHONY: id-table
+id-table: ## Solve the Brill initial data for A=... and write its psi table (ID_N_S, ID_N_THETA, ID_SCALE)
+	@test -n "$(A)" || (echo "Usage: make id-table A=<amplitude>" && exit 1)
+	$(COMPOSE) exec -T et python3 scripts/brill_initial_data.py -A $(A) \
+		--n-s $(ID_N_S) --n-theta $(ID_N_THETA) --scale $(ID_SCALE) \
+		--out $(TABLES_DIR)/holz_A$(A)_k2_$(ID_N_S)x$(ID_N_THETA).h5
+
 .PHONY: run-par
 run-par: _precheck-idle ## Run a parfile as is under the monitor (PAR=..., RUN_NAME=..., CAMPAIGN=...)
 	@test -n "$(PAR)" || (echo "Usage: make run-par PAR=par/<file>.par [RUN_NAME=<name>] [CAMPAIGN=<dir>]" && exit 1)
