@@ -11,11 +11,11 @@ scaling law
 M_AH ∝ (A - A*)^gamma
 ```
 
-> **Status: Phase 1a.** The environment, the parfile template and the
-> script interfaces are in place. The initial data approach is decided
-> (a standalone 2D solver, see [Plan](#plan)) but not implemented yet,
-> and the first feasibility tests check whether the evolution can run in
-> axisymmetry with `Cartoon2D`.
+> **Status: Phase 1a done.** Runs are monitored (memory guard, ETA).
+> Feasibility tests with Brill-Lindquist black holes show that the
+> evolution, mesh refinement, time refinement and the horizon finder all
+> work in axisymmetry with `Cartoon2D`, about ten times faster than the
+> 3D octant grid. The initial data solver (Phase 1b) is next.
 
 ## Plan
 
@@ -77,6 +77,13 @@ make test                # pytest suite
 make bisection-dry-run   # render the first parfile and print the run plan
 ```
 
+Any parfile can run under the monitor, for example a feasibility test:
+
+```bash
+make run-par PAR=par/feasibility/cartoon_bl_single.par CAMPAIGN=feasibility
+make status CAMPAIGN=feasibility
+```
+
 Once the initial data and the runner are implemented:
 
 ```bash
@@ -135,7 +142,8 @@ make analyze                          # gamma and reports/critical_scaling.png
 ├── templates/
 │   └── brill_collapse.par.template   # ET parfile with __AMPLITUDE__ / __FINAL_TIME__
 ├── par/
-│   └── mpi_check.par           # MPI communicator sanity check for docker-check
+│   ├── mpi_check.par           # MPI communicator sanity check for docker-check
+│   └── feasibility/            # Phase 1a Cartoon2D tests with Brill-Lindquist black holes
 ├── scripts/
 │   ├── bisection_runner.py     # bisection driver
 │   ├── run_monitor.py          # memory guard, ETA, `status` command

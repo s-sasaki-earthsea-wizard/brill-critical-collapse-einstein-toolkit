@@ -69,6 +69,34 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
    6-13 が E コア 4.5 GHz、14-15 が LP E コア 2.5 GHz。バルク同期の MPI は最遅 rank に
    律速されるため、cpuset の選び方がそのまま ETA に効く
 
+## Phase 1a: Cartoon2D feasibility の結果 (2026-10-15)
+
+`par/feasibility/` の Brill-Lindquist (BL) テスト。グリッド、時間積分、ゲージ、散逸は Brill テンプレートと同じ
+(4 レベル、最細 dx=0.025、RK4、Courant 0.25、1+log + Γ-driver η=1、KO ε=0.1)。共形因子は W 法。
+`make run-par PAR=... CAMPAIGN=feasibility`、np=4 × OMP=4。
+
+| parfile | 内容 | 結果 |
+| --- | --- | --- |
+| `cartoon_bl_single.par` | m=0.5 を原点に、t=5 | 完走 708 s、**25 /h**、0.9 GiB。M_irr=0.50000 が全区間一定 |
+| `octant_bl_single.par` | 同じ物理を 3D 八分儀で、t=1 | 1578 s、**2.34 /h**、11.6 GiB。t=1 で lapse の中心値と最小値は cartoon と 5e-5 以内、地平線の M_irr と座標半径も一致 |
+| `cartoon_bl_pair.par` | m=0.25 を z=±0.6125 に、t=6 | 完走 908 s、23 /h。軸上 finder (ah2) が M_irr=0.2755 (解析見積もり m(1+m'/2d)=0.2755) で t≈2.9 まで追跡。原点 finder (ah1) は t≈3 に共通地平線を捕捉、M_irr は 0.467→0.4991 |
+| `cartoon_bl_small_l4.par` | m=0.1 (地平線の半径 ≈ 2 セル)、4 レベル | t≤0.6 は未検出、検出後も M_irr 0.095〜0.098 (誤差 2〜5%)、形が数値的に 20% 歪む |
+| `cartoon_bl_small_l6.par` | 同、最細を 2 レベル追加 (dx=0.00625、8〜17 セル) | 完走 1065 s、**6.7 /h**、1.15 GiB。M_irr=0.10000 が t=0 から一定、rmin=rmax |
+
+**結論: ML_BSSN + Carpet FMR + time refinement + AHFD (原点の octant finder と軸上の quadrant finder) は
+Cartoon2D 上で動く。** コストは 3D 八分儀の約 1/10、メモリは 1/13。最細レベルを 2 つ足しても 3D の 4 レベル版より 3 倍速い。
+
+Cartoon2D で必要な設定と注意点:
+
+- `CoordBase::ymin = ymax = 0`、`boundary_shiftout_{x_lower,y_lower,y_upper,z_lower} = 1`、反射対称は z のみ
+- **`CarpetLib::poison_value = 0`**。Cartoon2D は y=0 面の x<0 ゴーストを Lagrange 補間で埋めるが、そのステンシルに
+  ゴースト自身を重み 0 で含む。t=0 の `ML_BSSN::Xt` のゴーストは未設定なので、NaN poison だと 0×NaN=NaN で停止する。
+  代償として、未初期化の値を読んでも NaNChecker では検出できなくなる
+- 軸上 finder は `origin_z[i]` とは別に **`initial_guess__coord_sphere__z_center[i]`** が要る (既定の 0 だと abort)
+- CarpetReduce は Cartoon2D 格子で「領域体積 0」と警告し、norm2 系の値は 3D と比べられない (BL の |H|₂ が 14 倍違った)。
+  x 軸上の H は地平線の外で cartoon/3D 比 0.83〜1.12 と一致。パンクチャ近傍 (急峻な場の回転補間) だけ 3〜5 倍大きい
+- 地平線の分解能の床: 半径 2〜3 セルでは不正確、8 セル以上なら M_irr は 5 桁正確 → R_min ≈ 6〜8 セルが目安
+
 ## 決定事項 (2026-10-15)
 
 | 項目 | 決定 | 理由・備考 |
@@ -119,7 +147,7 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | 0 | スケルトン、テンプレートのパラメータ検証、暫定ベンチ、init commit | ✅ 2026-10-15 |
-| 1a | 監視付き単発実行 (メモリガード + ETA) の実装。**Cartoon2D feasibility**: Brill-Lindquist BH で ML_BSSN + FMR + time refinement + AHFD (軸上 finder 含む) を 3D 八分儀と比較 (完走不要) | 進行中 |
+| 1a | 監視付き単発実行 (メモリガード + ETA) の実装。**Cartoon2D feasibility**: Brill-Lindquist BH で ML_BSSN + FMR + time refinement + AHFD (軸上 finder 含む) を 3D 八分儀と比較 (完走不要) | ✅ 2026-10-15 成立 (上記) |
 | 1b | 初期データ (a): Python ソルバ + 補間 thorn。M_ADM(A=5) = 0.70 で検証 (1a と並行可) | 未着手 |
 | 2 | ゲージ feasibility: A=5 で 1+log の破綻を再現 → harmonic → shock-avoiding。np/OMP/cpuset のベンチ | 未着手 |
 | 2.5 | パイロットキャンペーン (粗視化): z0、判定閾値の較正、A* の概算、crash の出方 | 未着手 |
@@ -132,7 +160,8 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
 - スクリプトは**コンテナの Python 3.8** で動くこと (`from __future__ import annotations`、
   `match` 文や組み込みジェネリクスを実行時に使わない)。`make check` / `make test` はコンテナ内で実行する
 - コード内のコメント、ログ、docstring (Google style) は英語
-- **全ランでメモリ監視と ETA を必須とする**。監視なしで cactus_sim を直接起動しない
+- **全ランでメモリ監視と ETA を必須とする**。監視なしで cactus_sim を直接起動しない。
+  テンプレート以外の parfile も `make run-par PAR=... RUN_NAME=... CAMPAIGN=...` で監視下で回す
 - cactus_sim の二重起動禁止 (`_precheck-idle`)
 - テンプレートに新しいパラメータを書くときは、ベースイメージの param.ccl で実在を確認する
 - セッション記録は `.claude-notes/` (git 管理外)
