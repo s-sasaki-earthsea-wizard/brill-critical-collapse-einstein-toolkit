@@ -406,7 +406,8 @@ def execute_run(
     last_status = 0.0
     lines: "queue.Queue[Optional[str]]" = queue.Queue()
 
-    with (run_dir / LOG_NAME).open("w") as log:
+    # Line-buffered so that `tail -f cactus.log` follows the run.
+    with (run_dir / LOG_NAME).open("w", buffering=1) as log:
         process = subprocess.Popen(
             command,
             cwd=str(run_dir),
