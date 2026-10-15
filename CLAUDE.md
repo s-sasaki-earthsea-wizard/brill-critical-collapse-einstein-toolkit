@@ -13,6 +13,9 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
 3. `scripts/analyze_critical_exponent.py` — γ の線形回帰と `critical_scaling.png`
 4. `README.md` — 前提条件、手順、ディレクトリ構成
 
+初期データは `scripts/brill_initial_data.py` (2D ソルバ、`make id-table`) と
+自作 thorn `thorns/BrillCollapse/BrillPsiTable` (表を Cactus の格子に補間) の組。
+
 加えて **全ランでメモリ監視 (OOM 対策) と ETA 見積もりを必須**とする
 (`scripts/run_monitor.py`, `make status` / `make monitor`)。
 
@@ -21,7 +24,12 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
 - 兄弟プロジェクト [../gw230529-einstein-toolkit](../gw230529-einstein-toolkit) の
   イメージ `gw230529-et:local` (ET_2025_05 Kruskal, MPICH 単独, フル thornlist) に
   **薄いオーバーレイ**を被せる。必要な thorn は全てコンパイル済みであることを確認済み
-  (`make docker-check` でアサート)。ソースからの再ビルド (60〜120 分, 17 GB) を避けるため
+  (`make docker-check` でアサート)。ソースからの再ビルド (60〜120 分, 17 GB) を避けるため。
+  自作 thorn (`thorns/`) はオーバーレイでインクリメンタルビルド (1 分弱、レイヤー +2 GB、イメージ 19 GB)
+- ベースイメージ `gw230529-et:local` は ECR タグ
+  `575907694783.dkr.ecr.us-west-2.amazonaws.com/gw230529/einstein-toolkit:latest` と同一。
+  ローカルタグが消えたら `docker tag` で戻す (ECR タグまで消すと全再ビルド)
+- コンテナは `init: true` (tini が PID 1)。中断した MPI ランのゾンビを回収させるため
 - コンテナ: `brill-collapse-et`、Jupyter は 8890 (8888: GW150914, 8889: GW230529)
 - 出力は `SIM_OUTPUT_DIR` (既定 `~/brill-collapse-output`、ローカル SSD) →
   コンテナ内 `/home/etuser/simulations`
@@ -34,7 +42,7 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
 
 | 仕様の記述 | ET での実体 |
 | --- | --- |
-| `BrillWave` ソーン | `EinsteinInitialData/IDBrillData`: `initial_data = "brilldata"`, `q_function = "gundlach"`, `gundlach_a = A`, `gundlach_b = gundlach_c = 2`, `gundlach_r0 = 0`, `gundlach_sigmarho = gundlach_sigmar = 1` で Holz 型 `q = A ρ² e^{−r²}` |
+| `BrillWave` ソーン | 自作 `BrillCollapse/BrillPsiTable` (`initial_data = "brill_psi_table"`) + `scripts/brill_initial_data.py`。IDBrillData (`q_function = "gundlach"`, `gundlach_b = gundlach_c = 2` 等で同じ Holz 型) は Carpet 上で使えない (下記 1) |
 | `lapse_advection_coeff = 1.0` | `ML_BSSN::advectLapse = 1` (`LapseAdvectionCoeff` は OUTDATED 扱い) |
 | `Shift::Spatial_Gauge = "Gamma-driver"` | `ML_BSSN::shiftGammaCoeff = 0.75`, `advectShift = 1`, `betaDriver` |
 | 1+log スライシング | `ML_BSSN::harmonicN = 1`, `harmonicF = 2.0` |
@@ -97,6 +105,37 @@ Cartoon2D で必要な設定と注意点:
   x 軸上の H は地平線の外で cartoon/3D 比 0.83〜1.12 と一致。パンクチャ近傍 (急峻な場の回転補間) だけ 3〜5 倍大きい
 - 地平線の分解能の床: 半径 2〜3 セルでは不正確、8 セル以上なら M_irr は 5 桁正確 → R_min ≈ 6〜8 セルが目安
 
+## Phase 1b: 初期データの結果 (2026-10-16)
+
+**ソルバ** (`scripts/brill_initial_data.py`): Δψ + (k/8)(q,ρρ + q,zz)ψ = 0 を極座標 (r,θ) で解く。
+r = L tan(πs/2) (L=2) でコンパクト化、s と θ はセル中心、6 次差分、ゴーストは解の偶奇性
+(原点・軸・赤道で偶、s=1 で奇: 外部解 Σ a_l P_l / r^{l+1} の 1/r は (1−s) の奇関数)。
+SuperLU の直接解法で 512×64 が 0.2 秒。
+
+- M_ADM の 3 つの推定量 (単極子の漸近係数、ソース積分 (1/2π)∫Vψ dV、Brill の (1/2π)∫|∇lnψ|² dV) が
+  512×64 で 1e-10 以内で一致し、どれも 6 次で収束
+- 解析解のテスト (erf(r)/r + r²e^{−r²}P₂) でラプラシアンが 6 次収束
+- **文献値 (正振幅、中心 Holz 型、σ=1、e^{2q}) は全て報告された桁で一致**:
+  Hilditch et al. 2017 Table 1 (A=4.6 → 0.597、4.69 → 0.619、4.697 → 0.621、4.7 → 0.622)、
+  同 Fig. 3 (A=6.073 → 1.02)、Khirnov & Ledvinka 2019 (A=5 → 0.70、5.5 → 0.84)。
+  本ソルバでは M(A*≈4.6967) = 0.62115、M(5) = 0.69912108、M(6) = 0.99170
+- 規約: k=1 の A は k=2 の A/2 と完全に同じデータ (テスト済み)。文献は全て k=2
+- 小振幅で M ≈ 0.0372 A²。負振幅は A≈−6.5 付近で演算子が特異になり、それ以上では ψ<0 (初期データが存在しない)
+- **未解決の食い違い**: Hilditch et al. 2013 §IV.3 は中心・負振幅 A=−1, −2.5, −5 の質量を 0.61, 1.37, 3.15 と書くが、
+  本ソルバは 0.042, 0.336, 3.21 (逆算すると 0.61, 1.37, 3.15 は A≈−3.13, −4.07, −4.98)。
+  小振幅展開と整合するのは本ソルバの値で、同論文のオフセンター族の質量 (0.61, 1.36, 3.15) とほぼ同じ数字なので
+  転記の誤りを疑っている。本番は正振幅なので保留
+
+**thorn** (`thorns/BrillCollapse/BrillPsiTable`): PARAMCHECK で表を読み、A・σ・k・格子と偶奇性を parfile と照合
+(不一致なら起動前に停止)。全格子点 (ゴースト含む) で 8 点の Lagrange 補間、計量は ψ と解析的な q から組み立て、
+軸上の (e^{kq}−1)/ρ² は `expm1` で厳密。
+
+- `par/initial_data/brill_id_check{,_hires}.par` (Cartoon2D、A=5、iteration 0):
+  thorn の ψ と Python の `evaluate_table` の差は最大 9.9e-15。
+  **t=0 のハミルトニアン拘束は解像度 2 倍で 15〜16.7 倍減少** (ML_ADMConstraints の 4 次差分どおり)。
+  原点・軸上・全レベルで同じなので、表の補間誤差は効いていない
+- HDF5 の固定長文字列は、読み出し側のメモリ型を「長さ + 1」にしないと最後の 1 文字が NUL で潰れる
+
 ## 決定事項 (2026-10-15)
 
 | 項目 | 決定 | 理由・備考 |
@@ -148,7 +187,7 @@ Cartoon2D で必要な設定と注意点:
 | --- | --- | --- |
 | 0 | スケルトン、テンプレートのパラメータ検証、暫定ベンチ、init commit | ✅ 2026-10-15 |
 | 1a | 監視付き単発実行 (メモリガード + ETA) の実装。**Cartoon2D feasibility**: Brill-Lindquist BH で ML_BSSN + FMR + time refinement + AHFD (軸上 finder 含む) を 3D 八分儀と比較 (完走不要) | ✅ 2026-10-15 成立 (上記) |
-| 1b | 初期データ (a): Python ソルバ + 補間 thorn。M_ADM(A=5) = 0.70 で検証 (1a と並行可) | 未着手 |
+| 1b | 初期データ (a): Python ソルバ + 補間 thorn。M_ADM(A=5) = 0.70 で検証 (1a と並行可) | ✅ 2026-10-16 (下記) |
 | 2 | ゲージ feasibility: A=5 で 1+log の破綻を再現 → harmonic → shock-avoiding。np/OMP/cpuset のベンチ | 未着手 |
 | 2.5 | パイロットキャンペーン (粗視化): z0、判定閾値の較正、A* の概算、crash の出方 | 未着手 |
 | 3 | 数値的な族の凍結 (η, ε, FD 次数, finder 配置, 判定閾値)、三値判定の実装、既知解テスト | 未着手 |
@@ -162,6 +201,10 @@ Cartoon2D で必要な設定と注意点:
 - コード内のコメント、ログ、docstring (Google style) は英語
 - **全ランでメモリ監視と ETA を必須とする**。監視なしで cactus_sim を直接起動しない。
   テンプレート以外の parfile も `make run-par PAR=... RUN_NAME=... CAMPAIGN=...` で監視下で回す
-- cactus_sim の二重起動禁止 (`_precheck-idle`)
+- cactus_sim の二重起動禁止 (`_precheck-idle`、ゾンビは数えない)
+- 自作 thorn の開発ループ: `thorns/` を編集 → `make thorn-build` (稼働中コンテナで再コンパイル、約 15 秒)
+  → ラン。確定したら `make docker-build` でイメージに焼き込む (コンテナを作り直すとビルドは消える)。
+  古いイメージは `docker image prune` で掃除する
+- 初期データの表は `make id-table A=...` で `SIM_OUTPUT_DIR/tables/holz_A<A>_k2_<n_s>x<n_theta>.h5` に作る
 - テンプレートに新しいパラメータを書くときは、ベースイメージの param.ccl で実在を確認する
 - セッション記録は `.claude-notes/` (git 管理外)
