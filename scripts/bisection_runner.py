@@ -26,22 +26,43 @@ Each run is monitored for memory (OOM guard) and reports its ETA; see
 Meant to run inside the container (Python 3.8), where mpirun.mpich and
 cactus_sim live; ``make bisection`` and friends wrap it.
 
-Status: skeleton. The CLI, template rendering and ``--dry-run`` work.
-Running Cactus, monitoring, classification and the bisection loop are
-not implemented yet.
+``--parfile`` runs any parfile under the same monitor, for feasibility
+tests and benchmarks that do not use the template.
+
+Status: the CLI, template rendering, ``--dry-run``, and monitored single
+runs (``--single``, ``--parfile``) work. Outcome classification and the
+bisection loop are not implemented yet (Phase 3).
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime
 import enum
+import json
 import os
+import queue
 import re
 import shlex
+import shutil
+import signal
+import subprocess
 import sys
-from dataclasses import dataclass
+import threading
+import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+from run_monitor import (
+    CGROUP_ROOT,
+    RESOURCES_FILENAME,
+    EtaEstimator,
+    ResourceMonitor,
+    format_duration,
+    now_iso,
+    write_status,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TEMPLATE = REPO_ROOT / "templates" / "brill_collapse.par.template"
@@ -53,6 +74,7 @@ HISTORY_FILENAME = "bisection_history.json"
 HISTORY_SCHEMA_VERSION = 1
 PARFILE_NAME = "brill_collapse.par"
 LOG_NAME = "cactus.log"
+RUN_SUMMARY_NAME = "run_summary.json"
 
 # Template placeholders look like __AMPLITUDE__. Lower-case double
 # underscores (AHFinderDirect's initial_guess__coord_sphere__radius)
@@ -237,18 +259,84 @@ def build_mpirun_command(
 
 
 # ---------------------------------------------------------------------
-# Running, classification and the bisection loop (not implemented yet)
+# Running Cactus under the resource monitor
 # ---------------------------------------------------------------------
+
+
+@dataclass
+class ExecutionResult:
+    """How one cactus_sim invocation ended.
+
+    Attributes:
+        exit_code: mpirun exit code (negative: killed by that signal).
+        wall_seconds: Wall-clock duration.
+        peak_memory_bytes: Highest container ``memory.current`` seen.
+        guard_tripped: Whether the memory guard stopped the run.
+        oom_killed: Whether the kernel OOM killer fired during the run.
+        timed_out: Whether the wall-clock limit stopped the run.
+        last_iteration: Last iteration in the IOBasic table.
+        t_reached: Simulation time of that iteration.
+        rate_per_hour: Final simulation-time rate estimate.
+    """
+
+    exit_code: Optional[int]
+    wall_seconds: float
+    peak_memory_bytes: Optional[int]
+    guard_tripped: bool
+    oom_killed: bool
+    timed_out: bool
+    last_iteration: Optional[int]
+    t_reached: Optional[float]
+    rate_per_hour: Optional[float]
+
+
+# Grace periods when stopping a run: first ask Cactus through the
+# TerminationTrigger file (checked every few iterations), then SIGTERM,
+# then SIGKILL on the whole process group.
+TERMINATE_GRACE_S = 120.0
+SIGTERM_GRACE_S = 30.0
+STATUS_INTERVAL_S = 15.0
+
+
+def request_termination(run_dir: Path) -> None:
+    """Ask Cactus to stop cleanly through TerminationTrigger.
+
+    The parfiles create ``IO::out_dir/TERMINATE`` (``output/TERMINATE``)
+    and poll it; writing a non-zero integer ends the run after the
+    current iteration.
+
+    Args:
+        run_dir: Working directory of the run.
+    """
+    trigger = run_dir / "output" / "TERMINATE"
+    trigger.parent.mkdir(parents=True, exist_ok=True)
+    trigger.write_text("1\n")
+
+
+def _signal_group(process: subprocess.Popen, sig: int) -> None:
+    try:
+        os.killpg(process.pid, sig)
+    except ProcessLookupError:
+        pass
+
+
+def _stream_lines(stream, sink: "queue.Queue[Optional[str]]") -> None:
+    for line in iter(stream.readline, ""):
+        sink.put(line)
+    sink.put(None)
 
 
 def execute_run(
     command: List[str],
     run_dir: Path,
+    run_name: str,
+    status_dir: Path,
     t_final: float,
     timeout_s: float,
     mem_guard_fraction: float,
     monitor_interval_s: float,
-) -> Tuple[Optional[int], float, Optional[int], bool]:
+    cgroup_root: Path = CGROUP_ROOT,
+) -> ExecutionResult:
     """Run Cactus in ``run_dir`` with memory monitoring and ETA reporting.
 
     Streams stdout/stderr into ``run_dir/cactus.log``, feeds every line to
@@ -259,16 +347,249 @@ def execute_run(
     Args:
         command: mpirun argument list.
         run_dir: Working directory of the run.
+        run_name: Label shown by ``make status``.
+        status_dir: Directory that receives ``status.json``.
         t_final: Physical end time, for the ETA.
         timeout_s: Wall-clock limit for this run.
         mem_guard_fraction: Fraction of the container memory limit at
             which the run is aborted.
         monitor_interval_s: Memory sampling interval.
+        cgroup_root: cgroup v2 hierarchy to sample (overridable for tests).
 
     Returns:
-        ``(exit_code, wall_seconds, peak_memory_bytes, guard_tripped)``.
+        How the run ended.
     """
-    raise NotImplementedError("execute_run is not implemented yet")
+    monitor = ResourceMonitor(
+        run_dir / RESOURCES_FILENAME, monitor_interval_s, mem_guard_fraction, cgroup_root
+    )
+    eta = EtaEstimator(t_final)
+    started = time.time()
+    started_at = now_iso()
+    monitor.start()
+
+    def status_snapshot(state: str) -> dict:
+        sample = monitor.latest
+        limit = sample.limit_bytes if sample else None
+        eta_s = eta.eta_seconds
+        eta_at = None
+        if eta_s is not None:
+            eta_at = (
+                datetime.datetime.now().astimezone() + datetime.timedelta(seconds=eta_s)
+            ).isoformat(timespec="seconds")
+        return {
+            "run_name": run_name,
+            "run_dir": str(run_dir),
+            "state": state,
+            "started_at": started_at,
+            "updated_at": now_iso(),
+            "elapsed_seconds": time.time() - started,
+            "iteration": eta.iteration,
+            "sim_time": eta.sim_time,
+            "t_final": t_final,
+            "rate_per_hour": eta.rate_per_hour,
+            "eta_seconds": eta_s,
+            "eta_at": eta_at,
+            "campaign_eta_seconds": None,
+            "memory": {
+                "current_bytes": sample.current_bytes if sample else None,
+                "run_peak_bytes": monitor.peak_bytes,
+                "limit_bytes": limit,
+                "guard_bytes": None if limit is None else int(mem_guard_fraction * limit),
+                "load_1min": sample.load_1min if sample else None,
+            },
+        }
+
+    timed_out = False
+    stop_reason: Optional[str] = None
+    stop_requested_at: Optional[float] = None
+    sigterm_sent_at: Optional[float] = None
+    last_status = 0.0
+    lines: "queue.Queue[Optional[str]]" = queue.Queue()
+
+    with (run_dir / LOG_NAME).open("w") as log:
+        process = subprocess.Popen(
+            command,
+            cwd=str(run_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1,
+            start_new_session=True,
+        )
+        reader = threading.Thread(target=_stream_lines, args=(process.stdout, lines), daemon=True)
+        reader.start()
+        write_status(status_dir, status_snapshot("running"))
+        stream_open = True
+        while stream_open or process.poll() is None:
+            try:
+                line = lines.get(timeout=1.0)
+                if line is None:
+                    stream_open = False
+                else:
+                    log.write(line)
+                    eta.observe(line, time.time())
+            except queue.Empty:
+                pass
+
+            now = time.time()
+            if stop_reason is None:
+                if monitor.guard_tripped or monitor.oom_killed:
+                    stop_reason = "memory guard" if monitor.guard_tripped else "kernel OOM kill"
+                elif now - started > timeout_s:
+                    stop_reason = "wall-clock limit"
+                    timed_out = True
+                if stop_reason is not None:
+                    message = "[runner] stopping the run: {}\n".format(stop_reason)
+                    log.write(message)
+                    print(message, end="", file=sys.stderr)
+                    request_termination(run_dir)
+                    stop_requested_at = now
+            elif sigterm_sent_at is None and stop_requested_at is not None:
+                if now - stop_requested_at > TERMINATE_GRACE_S and process.poll() is None:
+                    log.write("[runner] no clean stop, sending SIGTERM\n")
+                    _signal_group(process, signal.SIGTERM)
+                    sigterm_sent_at = now
+            elif sigterm_sent_at is not None and now - sigterm_sent_at > SIGTERM_GRACE_S:
+                if process.poll() is None:
+                    log.write("[runner] sending SIGKILL\n")
+                    _signal_group(process, signal.SIGKILL)
+                    sigterm_sent_at = float("inf")
+
+            if now - last_status > STATUS_INTERVAL_S:
+                write_status(status_dir, status_snapshot("running"))
+                last_status = now
+        exit_code = process.wait()
+        reader.join(timeout=5.0)
+
+    monitor.stop()
+    result = ExecutionResult(
+        exit_code=exit_code,
+        wall_seconds=time.time() - started,
+        peak_memory_bytes=monitor.peak_bytes,
+        guard_tripped=monitor.guard_tripped,
+        oom_killed=monitor.oom_killed,
+        timed_out=timed_out,
+        last_iteration=eta.iteration,
+        t_reached=eta.sim_time,
+        rate_per_hour=eta.rate_per_hour,
+    )
+    final = status_snapshot("finished")
+    final["outcome"] = describe_execution(result)
+    write_status(status_dir, final)
+    return result
+
+
+def describe_execution(result: ExecutionResult) -> str:
+    """One-line summary of how a run ended (not a physics verdict)."""
+    if result.oom_killed:
+        return "oom (kernel OOM kill)"
+    if result.guard_tripped:
+        return "oom (memory guard)"
+    if result.timed_out:
+        return "timeout"
+    if result.exit_code == 0:
+        return "completed"
+    return "failed (exit code {})".format(result.exit_code)
+
+
+FINAL_TIME_PATTERN = re.compile(
+    r"^\s*Cactus::cctk_final_time\s*=\s*([-+0-9.eE]+)", re.IGNORECASE | re.MULTILINE
+)
+
+
+def parse_final_time(parfile_text: str) -> Optional[float]:
+    """Read ``Cactus::cctk_final_time`` from a parfile, for the ETA.
+
+    Args:
+        parfile_text: Parfile contents.
+
+    Returns:
+        The final time, or ``None`` when the parfile does not set it.
+    """
+    match = FINAL_TIME_PATTERN.search(parfile_text)
+    return float(match.group(1)) if match else None
+
+
+def run_prepared(args: argparse.Namespace, parfile: Path, run_name: str, t_final: float) -> int:
+    """Execute an already prepared run directory and record the result.
+
+    Args:
+        args: Parsed command line.
+        parfile: Parfile inside its run directory.
+        run_name: Label for ``status.json`` and the summary.
+        t_final: Physical end time, for the ETA.
+
+    Returns:
+        Process exit code: 0 when Cactus exited cleanly.
+    """
+    run_dir = parfile.parent
+    command = build_mpirun_command(args.mpirun, args.cactus_bin, parfile, args.np, args.omp)
+    print("[runner] {}: np={} x OMP={}, t_final={}, log {}".format(
+        run_name, args.np, args.omp, t_final, run_dir / LOG_NAME))
+    result = execute_run(
+        command,
+        run_dir,
+        run_name,
+        args.runs_dir,
+        t_final,
+        args.timeout_hours * 3600.0,
+        args.mem_guard_fraction,
+        args.monitor_interval,
+    )
+    summary = asdict(result)
+    summary.update(
+        {
+            "run_name": run_name,
+            "parfile": str(parfile),
+            "command": command,
+            "outcome": describe_execution(result),
+            "finished_at": now_iso(),
+        }
+    )
+    (run_dir / RUN_SUMMARY_NAME).write_text(json.dumps(summary, indent=2) + "\n")
+    print("[runner] {}: {} after {}, t={} (it {}), peak memory {}".format(
+        run_name,
+        summary["outcome"],
+        format_duration(result.wall_seconds),
+        result.t_reached,
+        result.last_iteration,
+        "-" if result.peak_memory_bytes is None
+        else "{:.2f} GiB".format(result.peak_memory_bytes / 1024 ** 3),
+    ))
+    return 0 if result.exit_code == 0 and not (result.guard_tripped or result.timed_out) else 1
+
+
+def run_parfile(args: argparse.Namespace) -> int:
+    """Run an arbitrary parfile under the monitor (feasibility tests, benchmarks).
+
+    The parfile is copied into ``<runs_dir>/<run_name>/`` and run there,
+    so the run directory is self-contained.
+
+    Args:
+        args: Parsed command line; ``args.parfile`` is the source parfile.
+
+    Returns:
+        Process exit code.
+    """
+    source = args.parfile
+    text = source.read_text()
+    run_name = args.run_name or source.stem
+    run_dir = args.runs_dir / run_name
+    if run_dir.exists():
+        print("error: {} already exists; pick another --run-name".format(run_dir), file=sys.stderr)
+        return 1
+    run_dir.mkdir(parents=True)
+    parfile = run_dir / source.name
+    shutil.copyfile(str(source), str(parfile))
+    t_final = parse_final_time(text)
+    if t_final is None:
+        t_final = args.t_final
+    return run_prepared(args, parfile, run_name, t_final)
+
+
+# ---------------------------------------------------------------------
+# Classification and the bisection loop (not implemented yet)
+# ---------------------------------------------------------------------
 
 
 def classify_run(
@@ -348,13 +669,22 @@ def run_campaign(args: argparse.Namespace) -> int:
 def run_single(args: argparse.Namespace) -> int:
     """Run one amplitude outside the bisection (smoke tests, benchmarks).
 
+    The outcome is not classified yet (Phase 3); the run summary records
+    how Cactus ended.
+
     Args:
         args: Parsed command line; ``args.single`` is the amplitude.
 
     Returns:
         Process exit code.
     """
-    raise NotImplementedError("run_single is not implemented yet")
+    single_dir = args.runs_dir / "single"
+    target = single_dir / run_dir_name(0, args.single)
+    if target.exists():
+        print("error: {} already exists; remove it first".format(target), file=sys.stderr)
+        return 1
+    parfile = prepare_run_dir(single_dir, 0, args.single, args.template, args.t_final)
+    return run_prepared(args, parfile, "single A={}".format(format_amplitude(args.single)), args.t_final)
 
 
 # ---------------------------------------------------------------------
@@ -440,6 +770,14 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--resume", action="store_true", help="continue from bisection_history.json")
     mode.add_argument("--single", type=float, metavar="A", help="run one amplitude, no bisection")
+    mode.add_argument(
+        "--parfile", type=Path, metavar="PAR",
+        help="run this parfile as is under the monitor (feasibility tests, benchmarks)",
+    )
+    parser.add_argument(
+        "--run-name", metavar="NAME",
+        help="run directory name for --parfile (default: the parfile stem)",
+    )
     parser.add_argument(
         "--dry-run", action="store_true",
         help="render the first parfile and print the plan without running Cactus",
@@ -455,6 +793,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[List[str]] = None) -> int:
     """Entry point."""
     args = parse_args(argv)
+    if args.parfile is not None:
+        return run_parfile(args)
     if args.dry_run:
         return dry_run(args)
     if args.single is not None:
