@@ -38,6 +38,9 @@ BH_DIAGNOSTICS_PATTERN = "BH_diagnostics.ah{}.gp"
 CENTRAL_LAPSE_FILENAME = "admbase-lapse..asc"
 MIN_LAPSE_FILENAME = "admbase-lapse.minimum.asc"
 HAMILTONIAN_NORM2_FILENAME = "ml_admconstraints-ml_ham.norm2.asc"
+# Global maximum of |Re I| from WeylScal4 (IOScalar, one file per group).
+# In vacuum the Kretschmann scalar is 16 Re I, so it scales as length^-4.
+CURVATURE_NORM_INF_FILENAME = "weylscal4-curvir_group.norm_inf.asc"
 
 
 @dataclass
