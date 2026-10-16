@@ -29,6 +29,11 @@ Dispersion (all of)
     D5  the minimum lapse is at least ``lapse_recovered`` at the end and
         not falling over the last window (gauge, so only supporting).
 
+The verdict reports the finder confirmed first. When several are confirmed
+at the same time, it reports the one with the largest mass: a horizon
+forms as a pair of marginally trapped surfaces, an outer one that grows
+and an inner one that shrinks, and the apparent horizon is the outer one.
+
 A horizon that appears after D1-D3 were met is a contradiction and makes
 the run ``undecided``. A memory abort is ``oom``. A crash (NaN, MPI
 abort, kill, failed exit) is ``crash`` unless the collapse evidence was
@@ -428,7 +433,8 @@ def _collapse(inputs: RunInputs, config: ClassifierConfig) -> Tuple[Optional[Hor
     interval = _find_interval(inputs.horizons, config)
     every = [horizon_evidence(track, interval, config) for track in inputs.horizons]
     confirmed = [e for e in every if e.t_confirmed is not None]
-    first = min(confirmed, key=lambda e: (e.t_confirmed, e.number)) if confirmed else None
+    # Ties go to the outermost surface (largest mass), not the inner MOTS.
+    first = min(confirmed, key=lambda e: (e.t_confirmed, -e.m_last, e.number)) if confirmed else None
     return first, every
 
 

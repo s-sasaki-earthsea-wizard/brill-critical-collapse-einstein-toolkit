@@ -108,6 +108,20 @@ def test_earliest_confirmed_finder_wins():
     assert len(verdict.horizons) == 2
 
 
+def test_outer_surface_of_a_pair_wins_a_tie():
+    # A = 4.8, kappa = 2/3, eta = 0: two origin finders lock onto the inner
+    # (shrinking) and outer (growing) surfaces of a pair born at t ~ 8.8.
+    inner = [(1408 + 8 * k, 8.8 + 0.05 * k, m, r, 0.0)
+             for k, (m, r) in enumerate([(0.53819, 0.386), (0.53771, 0.380), (0.53735, 0.375)])]
+    outer = [(1408 + 8 * k, 8.8 + 0.05 * k, m, r, 0.0)
+             for k, (m, r) in enumerate([(0.54092, 0.422), (0.54173, 0.433), (0.54246, 0.444)])]
+    inputs = oc.RunInputs(horizons=[track(inner, number=1), track(outer, number=2)])
+    verdict = oc.classify(inputs, CONFIG)
+    assert verdict.outcome == oc.COLLAPSE
+    assert verdict.horizon.number == 2
+    assert verdict.horizon.m_last == pytest.approx(0.54246)
+
+
 def test_collapse_survives_a_later_crash():
     inputs = collapse_inputs(log=co.LogFailures(["ML_BSSN::alpha"], False, False, 1900, 11.9), exit_code=0)
     verdict = oc.classify(inputs, CONFIG)
