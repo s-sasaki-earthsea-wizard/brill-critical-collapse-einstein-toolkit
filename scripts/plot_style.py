@@ -26,6 +26,10 @@ SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#62
 LINESTYLES = ["-", "--", "-.", ":", (0, (5, 1, 1, 1)), (0, (3, 1, 1, 1, 1, 1)), (0, (1, 1)), (0, (8, 2))]
 MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]
 
+# Sequential: one hue, light to dark, for ordered series such as snapshots
+# in time. The lightest steps are faint, so pair them with line styles.
+SEQUENTIAL = ["#86b6ef", "#5b9ae6", "#2a78d6", "#1a5fb4", "#104281", "#0a2a55"]
+
 # Diverging: blue (below the midpoint) to red (above), neutral grey midpoint.
 DIVERGING = ["#104281", "#2a78d6", "#86b6ef", "#f0efec", "#f2a3a2", "#e34948", "#8f1f1f"]
 
@@ -68,6 +72,14 @@ def series_style(index: int) -> Dict[str, object]:
     if index >= len(SERIES):
         raise ValueError("more than {} series: fold into small multiples instead".format(len(SERIES)))
     return {"color": SERIES[index], "linestyle": LINESTYLES[index], "marker": MARKERS[index]}
+
+
+def sequential_style(index: int, count: int) -> Dict[str, object]:
+    """Colour and line style of step ``index`` of ``count`` ordered series."""
+    if count > len(SEQUENTIAL):
+        raise ValueError("more than {} ordered series".format(len(SEQUENTIAL)))
+    offset = len(SEQUENTIAL) - count  # use the darker end when there are few
+    return {"color": SEQUENTIAL[offset + index], "linestyle": LINESTYLES[count - 1 - index]}
 
 
 def diverging_cmap():
