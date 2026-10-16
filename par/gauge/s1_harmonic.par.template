@@ -371,6 +371,7 @@ IOScalar::one_file_per_group   = yes
 IOScalar::outScalar_reductions = "minimum maximum norm_inf"
 IOScalar::outScalar_vars       = "
   ADMBase::lapse
+  ADMBase::shift
   ML_ADMConstraints::ML_Ham
   WeylScal4::curvIr_group
 "
@@ -380,12 +381,14 @@ IOASCII::output_symmetry_points = no
 IOASCII::out0D_every            = 8
 IOASCII::out0D_vars             = "ADMBase::lapse"
 
-# Profiles along the axes every 0.8: where the lapse dips and the
-# curvature peaks (z0 for the on-axis finders).
-IOASCII::out1D_every = 128
+# Profiles along the axes every 0.2: where the lapse dips and the
+# curvature peaks (z0 for the on-axis finders), and the shift, whose
+# sharp features can drive a crash.
+IOASCII::out1D_every = 32
 IOASCII::out1D_d     = no
 IOASCII::out1D_vars  = "
   ADMBase::lapse
+  ADMBase::shift
   ML_ADMConstraints::ML_Ham
   WeylScal4::curvIr_group
 "
