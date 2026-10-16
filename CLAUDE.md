@@ -174,8 +174,11 @@ A=4.0 (S2) は **dispersion と判定、t=5.15 で早期終了** (曲率 463→9
 - **曲率の入力**: `weylscal4-curvir_group.norm_inf.asc` (WeylScal4 の Re I の全域 |max|、真空で Kretschmann = 16 Re I)。
   **テンプレートはまだこれを出力しないので、今のテンプレートでは分散と判定されない** (常に undecided)。
   ファイル名は WeylScal4 を有効にした最初のランで確認すること
-- **早期終了**: 実行中 60 秒ごとに同じ判定を回し、崩壊で M_irr が落ち着いた (窓 max(10M, 1.0) で相対変化 1e-3 以下)
-  か分散が確定したら TerminationTrigger で止める (`--no-early-stop` で無効)
+- **早期終了**: 実行中 60 秒ごとに同じ判定を回し、崩壊で M_irr が安定した (直近 1.0 の最小二乗の傾きで
+  |dM/dt|/M ≤ 2e-3 /時間) か分散が確定したら TerminationTrigger で止める (`--no-early-stop` で無効)。
+  当初は「窓 max(10M,1) での相対変化 ≤ 1e-3」だったが、Brill の BH は残りの波の降着でゆっくり育つため
+  (A=5 で 6 の時間に 0.3%) 変化率の基準に変更 (Syota さんの提案、2026-10-16)。さかのぼって当てると
+  S2 は t=10.0 (M=0.5850)、S2z wide は t=14.3 (M=0.5756) で安定と判定される
 - **`bisection_history.json`**: 原子的に保存。数値的な族のフィンガープリント (テンプレートの sha256、判定の閾値、
   t_final、cactus_sim のサイズと mtime、初期データの格子) を持ち、`--resume` で一致しなければ拒否。
   cactus_sim を再ビルドすると mtime が変わるので、キャンペーン中は `make docker-build` / `make thorn-build` をしない

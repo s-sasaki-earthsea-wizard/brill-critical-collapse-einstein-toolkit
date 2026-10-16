@@ -51,13 +51,24 @@ def test_confirmed_horizon_is_collapse():
     assert verdict.horizon.kind == "origin"
 
 
-def test_mass_settles_after_the_horizon_relaxes():
-    # The settle window is 10 M = 6 back from the last find.
+def test_mass_settles_once_the_rate_drops():
+    # M = m (1 - 0.1 exp(-5 (t - 6))): |dM/dt|/M ~ 0.5 exp(-5 (t - 6)).
     verdict = oc.classify(collapse_inputs(t_end=20.0), CONFIG)
     assert verdict.horizon.m_settled == pytest.approx(0.6, rel=1e-3)
-    early = oc.classify(collapse_inputs(t_end=6.5), CONFIG)
-    assert early.outcome == oc.COLLAPSE
-    assert early.horizon.m_settled is None
+    too_short = oc.classify(collapse_inputs(t_end=6.5), CONFIG)  # less than one window of finds
+    assert too_short.outcome == oc.COLLAPSE
+    assert too_short.horizon.m_settled is None
+    still_growing = oc.classify(collapse_inputs(t_end=7.2), CONFIG)  # rate ~ 3e-3 per unit time
+    assert still_growing.horizon.m_settled is None
+    assert oc.classify(collapse_inputs(t_end=8.0), CONFIG).horizon.m_settled is not None
+
+
+def test_settled_mass_accepts_a_slow_drift():
+    # Like A = 5 with zero shift: +0.3 % over 6 time units is settled.
+    times = [13.0 + 0.1 * k for k in range(61)]
+    masses = [0.5755 * (1.0 + 5e-4 * (t - 13.0)) for t in times]
+    assert oc.settled_mass(times, masses, CONFIG) == pytest.approx(masses[-1])
+    assert oc.settled_mass(times, masses, oc.ClassifierConfig(settle_rate_threshold=1e-4)) is None
 
 
 def test_two_finds_are_not_enough():

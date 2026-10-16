@@ -75,10 +75,13 @@ class ClassifierConfig:
         min_horizon_radius: C3, coordinate radius; 0 disables.
         find_interval: Iterations between horizon finds; ``None`` infers
             it as the smallest gap between finds.
-        settle_relative_change: Relative spread of M_irr over the settle
-            window below which the mass counts as settled.
-        settle_window_mass_factor: Settle window in units of the mass.
-        settle_window_min: Lower bound of the settle window.
+        settle_rate_window: Time span, ending at the last find, over which
+            the rate of change of M_irr is fitted.
+        settle_rate_threshold: The mass counts as settled once
+            |dM/dt| / M over that span falls below this (per unit time).
+            A Brill black hole keeps accreting the rest of the wave slowly
+            (A = 5: about 0.3 % over 6 time units), so a criterion on the
+            rate rather than on the total change.
         curvature_drop_factor: D1.
         dispersion_window: D1 window.
         dispersion_min_time: D3.
@@ -89,9 +92,8 @@ class ClassifierConfig:
     mass_decrease_tolerance: float = 1.0e-3
     min_horizon_radius: float = 0.0
     find_interval: Optional[int] = None
-    settle_relative_change: float = 1.0e-3
-    settle_window_mass_factor: float = 10.0
-    settle_window_min: float = 1.0
+    settle_rate_window: float = 1.0
+    settle_rate_threshold: float = 2.0e-3
     curvature_drop_factor: float = 10.0
     dispersion_window: float = 2.0
     dispersion_min_time: float = 5.0
@@ -252,19 +254,26 @@ def _find_interval(horizons: Sequence[HorizonTrack], config: ClassifierConfig) -
 
 
 def settled_mass(times: Sequence[float], masses: Sequence[float], config: ClassifierConfig) -> Optional[float]:
-    """Last M_irr if it varied by less than the tolerance over the settle window.
+    """Last M_irr once its relative rate of change has dropped below the threshold.
 
-    The window is max(settle_window_mass_factor * M, settle_window_min)
-    back from the last find, and the finds must cover all of it.
+    The rate is the least-squares slope of M_irr over the finds in the
+    last ``settle_rate_window``, divided by the last mass. The finds must
+    cover the whole window and there must be at least three of them.
     """
     if not masses or masses[-1] <= 0.0:
         return None
     m_last, t_last = masses[-1], times[-1]
-    window = max(config.settle_window_mass_factor * m_last, config.settle_window_min)
+    window = config.settle_rate_window
     if t_last - times[0] < window:
         return None
-    recent = [m for t, m in zip(times, masses) if t >= t_last - window]
-    if (max(recent) - min(recent)) / m_last <= config.settle_relative_change:
+    recent = [(t, m) for t, m in zip(times, masses) if t >= t_last - window - 1e-9]
+    if len(recent) < 3:
+        return None
+    t_mean = sum(t for t, _ in recent) / len(recent)
+    m_mean = sum(m for _, m in recent) / len(recent)
+    denominator = sum((t - t_mean) ** 2 for t, _ in recent)
+    slope = sum((t - t_mean) * (m - m_mean) for t, m in recent) / denominator
+    if abs(slope) / m_last <= config.settle_rate_threshold:
         return m_last
     return None
 
