@@ -1,0 +1,367 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
+# Brill wave vacuum critical collapse -- axisymmetric (Cartoon2D) template
+# =================================================================
+# Time-symmetric Holz-type Brill wave (sigma = 1, e^{2q}) evolved with
+# ML_BSSN on the y = 0 plane of a Cartoon2D grid (x >= 0, z >= 0 with
+# reflection in z), Carpet mesh and time refinement centred on the origin.
+#
+# Placeholders, rendered by scripts/bisection_runner.py:
+#   __AMPLITUDE__   Brill wave amplitude A
+#   __FINAL_TIME__  physical end time t_max
+#   __TABLE_FILE__  conformal factor table, solved per amplitude by the
+#                   runner (scripts/brill_initial_data.py)
+#
+# Phase 2 gauge variant of templates/brill_cartoon.par.template; only
+# the gauge block differs. S0z.
+# The grid, gauge, dissipation, finder layout and classifier thresholds
+# are frozen in Phase 3 before the production campaign.
+
+Cactus::cctk_run_title             = "Brill wave collapse (Cartoon2D), A = __AMPLITUDE__"
+Cactus::cctk_full_warnings         = yes
+Cactus::highlight_warning_messages = no
+
+Cactus::terminate       = "time"
+Cactus::cctk_final_time = __FINAL_TIME__
+
+ActiveThorns = "IOUtil"
+IO::out_dir = "output"
+
+
+# =================================================================
+# Infrastructure
+# =================================================================
+
+ActiveThorns = "
+  AEILocalInterp
+  Fortran
+  GenericFD
+  GSL
+  HDF5
+  InitBase
+  LocalInterp
+  LoopControl
+  Slab
+  SystemTopology
+  TGRtensor
+"
+
+ActiveThorns = "Carpet CarpetLib CarpetInterp CarpetReduce CarpetSlab"
+
+Carpet::verbose           = no
+Carpet::veryverbose       = no
+Carpet::schedule_barriers = no
+Carpet::storage_verbose   = no
+CarpetLib::output_bboxes  = no
+
+# Zero, not NaN, for new memory: Cartoon2D's interpolation stencil reads
+# unset ghost points with weight zero at t = 0 (CLAUDE.md, Phase 1a).
+Carpet::poison_new_timelevels = yes
+CarpetLib::poison_new_memory  = yes
+CarpetLib::poison_value       = 0
+
+
+# =================================================================
+# Grid: cartoon plane y = 0, x >= 0, z >= 0
+# =================================================================
+
+ActiveThorns = "Boundary CartGrid3D CoordBase ReflectionSymmetry SymBase Cartoon2D"
+
+CartGrid3D::type = "coordbase"
+
+CoordBase::domainsize = "minmax"
+CoordBase::xmin =  0.0
+CoordBase::ymin =  0.0
+CoordBase::zmin =  0.0
+CoordBase::xmax = 24.0
+CoordBase::ymax =  0.0
+CoordBase::zmax = 24.0
+CoordBase::dx   =  0.2
+CoordBase::dy   =  0.2
+CoordBase::dz   =  0.2
+
+CoordBase::boundary_size_x_lower = 3
+CoordBase::boundary_size_y_lower = 3
+CoordBase::boundary_size_z_lower = 3
+CoordBase::boundary_size_x_upper = 3
+CoordBase::boundary_size_y_upper = 3
+CoordBase::boundary_size_z_upper = 3
+
+CoordBase::boundary_shiftout_x_lower = 1
+CoordBase::boundary_shiftout_y_lower = 1
+CoordBase::boundary_shiftout_y_upper = 1
+CoordBase::boundary_shiftout_z_lower = 1
+
+Cartoon2D::cartoon_active = yes
+Cartoon2D::order          = 4
+
+ReflectionSymmetry::reflection_z   = yes
+ReflectionSymmetry::avoid_origin_z = no
+
+
+# =================================================================
+# Mesh refinement: 4 levels, finest dx = 0.025
+# =================================================================
+
+ActiveThorns = "CarpetRegrid2"
+
+Carpet::domain_from_coordbase = yes
+Carpet::max_refinement_levels = 4
+Carpet::ghost_size            = 3
+Carpet::use_buffer_zones      = yes
+
+Carpet::prolongation_order_space = 5
+Carpet::prolongation_order_time  = 2
+Carpet::init_fill_timelevels     = yes
+
+Carpet::time_refinement_factors = "[1, 2, 4, 8]"
+
+CarpetRegrid2::regrid_every = 0
+CarpetRegrid2::num_centres  = 1
+CarpetRegrid2::num_levels_1 = 4
+CarpetRegrid2::radius_1[1]  = 12.0
+CarpetRegrid2::radius_1[2]  =  4.0
+CarpetRegrid2::radius_1[3]  =  2.0
+
+
+# =================================================================
+# Time integration
+# =================================================================
+
+ActiveThorns = "MoL Time"
+
+MoL::ODE_Method             = "RK4"
+MoL::MoL_Intermediate_Steps = 4
+MoL::MoL_Num_Scratch_Levels = 1
+
+Time::dtfac = 0.25
+
+
+# =================================================================
+# Spacetime variables and initial data
+# =================================================================
+
+ActiveThorns = "
+  ADMBase
+  ADMCoupling
+  ADMMacros
+  CoordGauge
+  SpaceMask
+  StaticConformal
+  TmunuBase
+  BrillPsiTable
+"
+
+ADMBase::metric_type       = "physical"
+ADMBase::metric_timelevels = 3
+
+ADMBase::initial_data    = "brill_psi_table"
+ADMBase::initial_lapse   = "one"
+ADMBase::initial_shift   = "zero"
+ADMBase::initial_dtlapse = "zero"
+ADMBase::initial_dtshift = "zero"
+
+BrillPsiTable::table_file      = "__TABLE_FILE__"
+BrillPsiTable::amplitude       = __AMPLITUDE__
+BrillPsiTable::sigma           = 1.0
+BrillPsiTable::exponent_factor = 2
+
+
+# =================================================================
+# Evolution: ML_BSSN
+# =================================================================
+
+ActiveThorns = "ML_BSSN ML_BSSN_Helper NewRad"
+
+ADMBase::evolution_method         = "ML_BSSN"
+ADMBase::lapse_evolution_method   = "ML_BSSN"
+ADMBase::shift_evolution_method   = "ML_BSSN"
+ADMBase::dtlapse_evolution_method = "ML_BSSN"
+ADMBase::dtshift_evolution_method = "ML_BSSN"
+
+ML_BSSN::fdOrder         = 4
+ML_BSSN::conformalMethod = 1
+
+# --- gauge (S0z: 1+log slicing, zero shift (the setup of Khirnov & Ledvinka 2019 for A = 5)) ---
+ML_BSSN::harmonicN       = 1
+ML_BSSN::harmonicF       = 2.0
+ML_BSSN::advectLapse     = 1
+# Zero shift: with shiftGammaCoeff = 0 and betaDriver = 0 the shift,
+# initially zero, stays zero.
+ML_BSSN::shiftGammaCoeff = 0.0
+ML_BSSN::advectShift     = 0
+ML_BSSN::betaDriver      = 0.0
+# --- end of gauge ---
+ML_BSSN::minimumLapse    = 1.0e-8
+
+ML_BSSN::initial_boundary_condition = "extrapolate-gammas"
+ML_BSSN::rhs_boundary_condition     = "NewRad"
+Boundary::radpower                  = 2
+
+ML_BSSN::ML_log_confac_bound = "none"
+ML_BSSN::ML_metric_bound     = "none"
+ML_BSSN::ML_Gamma_bound      = "none"
+ML_BSSN::ML_trace_curv_bound = "none"
+ML_BSSN::ML_curv_bound       = "none"
+ML_BSSN::ML_lapse_bound      = "none"
+ML_BSSN::ML_dtlapse_bound    = "none"
+ML_BSSN::ML_shift_bound      = "none"
+ML_BSSN::ML_dtshift_bound    = "none"
+
+ML_BSSN::epsDiss = 0.0
+
+ActiveThorns = "Dissipation SphericalSurface"
+
+Dissipation::order  = 5
+Dissipation::epsdis = 0.1
+Dissipation::vars   = "
+  ML_BSSN::ML_log_confac
+  ML_BSSN::ML_metric
+  ML_BSSN::ML_trace_curv
+  ML_BSSN::ML_curv
+  ML_BSSN::ML_Gamma
+  ML_BSSN::ML_lapse
+  ML_BSSN::ML_shift
+  ML_BSSN::ML_dtlapse
+  ML_BSSN::ML_dtshift
+"
+
+
+# =================================================================
+# Diagnostics: constraints and the curvature invariant
+# =================================================================
+# WeylScal4's invariant I; in vacuum the Kretschmann scalar is 16 Re I.
+# Its global |max| is the dispersion evidence of the classifier and the
+# subcritical scaling variable K_max. Computed every coarse step.
+
+ActiveThorns = "ML_ADMConstraints WeylScal4"
+
+WeylScal4::fdOrder         = 4
+WeylScal4::calc_scalars    = "psis"
+WeylScal4::calc_invariants = "always"
+WeylScal4::WeylScal4_psis_calc_Nth_calc_every   = 8
+WeylScal4::WeylScal4_invars_calc_Nth_calc_every = 8
+
+
+# =================================================================
+# Apparent horizon finders
+# =================================================================
+#   ah1  origin, octant                (central horizon, common horizon)
+#   ah2  (0, 0, 0.5) on the axis, quadrant
+#   ah3  (0, 0, 1.0) on the axis, quadrant
+# Near the threshold horizons can form as a pair at (0, 0, +-z0)
+# (arXiv:1706.01829, 2205.04379). The axis positions are placeholders
+# until the first runs show where the curvature peaks. On-axis finders
+# need their own initial guess centre (CLAUDE.md, Phase 1a).
+
+ActiveThorns = "AHFinderDirect"
+
+AHFinderDirect::N_horizons    = 3
+AHFinderDirect::find_every    = 16
+AHFinderDirect::verbose_level = "physics details"
+
+AHFinderDirect::geometry_interpolator_name = "Lagrange polynomial interpolation"
+AHFinderDirect::geometry_interpolator_pars = "order=4"
+AHFinderDirect::surface_interpolator_name  = "Lagrange polynomial interpolation"
+AHFinderDirect::surface_interpolator_pars  = "order=4"
+
+AHFinderDirect::output_h_every = 160
+
+AHFinderDirect::patch_system_type[1]                   = "+xyz octant (mirrored)"
+AHFinderDirect::origin_x[1]                            = 0.0
+AHFinderDirect::origin_y[1]                            = 0.0
+AHFinderDirect::origin_z[1]                            = 0.0
+AHFinderDirect::initial_guess__coord_sphere__radius[1] = 0.5
+AHFinderDirect::reset_horizon_after_not_finding[1]     = yes
+AHFinderDirect::find_after_individual_time[1]          = 1.0
+AHFinderDirect::which_surface_to_store_info[1]         = 0
+
+AHFinderDirect::patch_system_type[2]                     = "+xy quadrant (mirrored)"
+AHFinderDirect::origin_x[2]                              = 0.0
+AHFinderDirect::origin_y[2]                              = 0.0
+AHFinderDirect::origin_z[2]                              = 0.5
+AHFinderDirect::initial_guess__coord_sphere__z_center[2] = 0.5
+AHFinderDirect::initial_guess__coord_sphere__radius[2]   = 0.2
+AHFinderDirect::reset_horizon_after_not_finding[2]       = yes
+AHFinderDirect::find_after_individual_time[2]            = 1.0
+AHFinderDirect::which_surface_to_store_info[2]           = 1
+
+AHFinderDirect::patch_system_type[3]                     = "+xy quadrant (mirrored)"
+AHFinderDirect::origin_x[3]                              = 0.0
+AHFinderDirect::origin_y[3]                              = 0.0
+AHFinderDirect::origin_z[3]                              = 1.0
+AHFinderDirect::initial_guess__coord_sphere__z_center[3] = 1.0
+AHFinderDirect::initial_guess__coord_sphere__radius[3]   = 0.2
+AHFinderDirect::reset_horizon_after_not_finding[3]       = yes
+AHFinderDirect::find_after_individual_time[3]            = 1.0
+AHFinderDirect::which_surface_to_store_info[3]           = 2
+
+SphericalSurface::nsurfaces = 3
+SphericalSurface::maxntheta = 39
+SphericalSurface::maxnphi   = 76
+
+
+# =================================================================
+# Run safety
+# =================================================================
+
+ActiveThorns = "NaNChecker"
+
+NaNChecker::check_every     = 8
+NaNChecker::action_if_found = "terminate"
+NaNChecker::check_vars      = "
+  ML_BSSN::ML_log_confac
+  ML_BSSN::ML_metric
+  ML_BSSN::ML_trace_curv
+  ML_BSSN::ML_curv
+  ML_BSSN::ML_Gamma
+  ML_BSSN::ML_lapse
+  ML_BSSN::ML_shift
+"
+
+ActiveThorns = "TerminationTrigger"
+
+TerminationTrigger::termination_from_file   = yes
+TerminationTrigger::create_termination_file = yes
+TerminationTrigger::termination_file        = "TERMINATE"
+TerminationTrigger::check_file_every        = 8
+
+
+# =================================================================
+# Output
+# =================================================================
+
+ActiveThorns = "CarpetIOBasic CarpetIOScalar CarpetIOASCII SystemStatistics"
+
+IOBasic::outInfo_every      = 8
+IOBasic::outInfo_reductions = "minimum maximum"
+IOBasic::outInfo_vars       = "
+  ADMBase::alp
+  ML_ADMConstraints::H
+  Carpet::physical_time_per_hour
+  SystemStatistics::maxrss_mb
+"
+
+IOScalar::outScalar_every      = 8
+IOScalar::one_file_per_group   = yes
+IOScalar::outScalar_reductions = "minimum maximum norm_inf"
+IOScalar::outScalar_vars       = "
+  ADMBase::lapse
+  ML_ADMConstraints::ML_Ham
+  WeylScal4::curvIr_group
+"
+
+IOASCII::one_file_per_group     = yes
+IOASCII::output_symmetry_points = no
+IOASCII::out0D_every            = 8
+IOASCII::out0D_vars             = "ADMBase::lapse"
+
+# Profiles along the axes every 0.8: where the lapse dips and the
+# curvature peaks (z0 for the on-axis finders).
+IOASCII::out1D_every = 128
+IOASCII::out1D_d     = no
+IOASCII::out1D_vars  = "
+  ADMBase::lapse
+  ML_ADMConstraints::ML_Ham
+  WeylScal4::curvIr_group
+"
