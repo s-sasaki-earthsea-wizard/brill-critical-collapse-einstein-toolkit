@@ -61,9 +61,10 @@ docker-ps: ## Show container status
 	$(COMPOSE) ps
 
 .PHONY: thorn-build
-thorn-build: ## Recompile the project thorns in the running container (dev loop; docker-build makes it permanent)
+thorn-build: ## Recompile the project thorns and patches in the running container (dev loop; docker-build makes it permanent)
 	$(COMPOSE) exec -T et bash -lc '\
 		cp -a /home/etuser/work/thorns/. $(CACTUS_HOME)/arrangements/ && \
+		bash /home/etuser/work/scripts/apply_cactus_patches.sh /home/etuser/work/patches $(CACTUS_HOME) && \
 		cd $(CACTUS_HOME) && \
 		make sim PROMPT=no -j$$(getconf _NPROCESSORS_ONLN) > /home/etuser/simulations/build_project_thorns.log 2>&1 \
 		|| (tail -40 /home/etuser/simulations/build_project_thorns.log; exit 1)'

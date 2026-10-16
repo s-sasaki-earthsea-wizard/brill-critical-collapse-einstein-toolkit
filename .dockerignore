@@ -1,7 +1,10 @@
 # Files excluded from the Docker build context
 # =================================================================
-# Only the project's Cactus thorns are copied into the image; the rest of
-# the repository is bind-mounted at run time (see docker-compose.yml).
+# Only the project's Cactus thorns, its patches to stock thorns and the
+# script that applies them are copied into the image; the rest of the
+# repository is bind-mounted at run time (see docker-compose.yml).
 *
 !Dockerfile
 !thorns/
+!patches/
+!scripts/apply_cactus_patches.sh

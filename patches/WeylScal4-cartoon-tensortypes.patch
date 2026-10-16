@@ -1,0 +1,49 @@
+WeylScal4: treat Psi1 and Psi3 as scalars so that Cartoon2D accepts them
+========================================================================
+Cartoon2D aborts on the ManualCartesian tensor type of the Psi1 and Psi3
+groups ("Illegal tensor type alias for group WEYLSCAL4::PSI1R_GROUP").
+Cartoon2D only rotates about the z axis, and in an axisymmetric
+spacetime WeylScal4's tetrad rotates with the point, so every Psi_n is a
+scalar under those rotations. The z reflection parities of the original
+tags are kept: Re Psi1 and Re Psi3 are odd ("++-"), Im Psi1 and Im Psi3
+even ("--+"); a Scalar's tensorparity applies to every reflection, and
+the x and y reflections are not in use with Cartoon2D. The invariants I
+and J, which this project uses, are computed pointwise from the Psi_n
+and are unaffected by how the ghost zones of the Psi_n are filled.
+
+Applied to the Cactus tree by scripts/apply_cactus_patches.sh.
+
+--- a/arrangements/EinsteinAnalysis/WeylScal4/interface.ccl
++++ b/arrangements/EinsteinAnalysis/WeylScal4/interface.ccl
+@@ -57,13 +57,13 @@
+ } "Psi0i_group"
+ 
+ public:
+-CCTK_REAL Psi1r_group type=GF timelevels=3 tags='tensortypealias="ManualCartesian" tensorweight=0 cartesianreflectionparities="++-"'
++CCTK_REAL Psi1r_group type=GF timelevels=3 tags='tensortypealias="Scalar" tensorweight=0 tensorparity=-1'
+ {
+   Psi1r
+ } "Psi1r_group"
+ 
+ public:
+-CCTK_REAL Psi1i_group type=GF timelevels=3 tags='tensortypealias="ManualCartesian" tensorweight=0 cartesianreflectionparities="--+"'
++CCTK_REAL Psi1i_group type=GF timelevels=3 tags='tensortypealias="Scalar" tensorweight=0 tensorparity=1'
+ {
+   Psi1i
+ } "Psi1i_group"
+@@ -81,13 +81,13 @@
+ } "Psi2i_group"
+ 
+ public:
+-CCTK_REAL Psi3r_group type=GF timelevels=3 tags='tensortypealias="ManualCartesian" tensorweight=0 cartesianreflectionparities="++-"'
++CCTK_REAL Psi3r_group type=GF timelevels=3 tags='tensortypealias="Scalar" tensorweight=0 tensorparity=-1'
+ {
+   Psi3r
+ } "Psi3r_group"
+ 
+ public:
+-CCTK_REAL Psi3i_group type=GF timelevels=3 tags='tensortypealias="ManualCartesian" tensorweight=0 cartesianreflectionparities="--+"'
++CCTK_REAL Psi3i_group type=GF timelevels=3 tags='tensortypealias="Scalar" tensorweight=0 tensorparity=1'
+ {
+   Psi3i
+ } "Psi3i_group"

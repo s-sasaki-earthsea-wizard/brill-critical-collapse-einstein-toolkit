@@ -17,8 +17,9 @@
 #
 # The project's own thorns (thorns/, e.g. BrillCollapse/BrillPsiTable,
 # which loads the initial data solved by scripts/brill_initial_data.py)
-# are compiled into the base configuration incrementally: the base keeps
-# its object files, so this step takes well under a minute.
+# and its patches to stock thorns (patches/, e.g. WeylScal4 tensor types
+# for Cartoon2D) are compiled into the base configuration incrementally:
+# the base keeps its object files, so this step takes a few minutes.
 
 ARG BASE_IMAGE=gw230529-et:local
 FROM ${BASE_IMAGE}
@@ -33,7 +34,10 @@ ENV PATH=/home/etuser/Cactus/exe:${PATH}
 
 ARG PROJECT_THORNS="BrillCollapse/BrillPsiTable"
 COPY --chown=etuser:etuser thorns/ /home/etuser/Cactus/arrangements/
-RUN cd /home/etuser/Cactus \
+COPY --chown=etuser:etuser patches/ /tmp/project-patches/
+COPY --chown=etuser:etuser scripts/apply_cactus_patches.sh /tmp/apply_cactus_patches.sh
+RUN bash /tmp/apply_cactus_patches.sh /tmp/project-patches /home/etuser/Cactus \
+    && cd /home/etuser/Cactus \
     && for thorn in ${PROJECT_THORNS}; do \
          grep -qx "${thorn}" configs/sim/ThornList || echo "${thorn}" >> configs/sim/ThornList; \
        done \
