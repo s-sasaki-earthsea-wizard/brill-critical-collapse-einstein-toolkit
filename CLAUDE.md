@@ -298,5 +298,7 @@ A=4.8 で κ=1/2, 1/3 も t=7.7 で crash (κ はほぼ無関係)。**κ=2/3 + �
   Glossary, References, _Sidebar
   - 新しい知見は **Findings** に日付付きで追記し、関係する解説ページも更新する。数値の一次情報は CLAUDE.md
   - 作図スクリプトの図は Wiki の `images/` に置いてページに載せる (Wiki は .md を全てページにするので、
-    `images/` に .md を置かない)
+    `images/` に .md を置かない)。`make figures` で `reports/figures/` に描き、`make wiki-figures` で
+    Wiki の `images/` にコピーする。新しい図はまず `makefiles/figures.mk` にレシピを足す
+    (スクリプトは `scripts/plot_initial_data.py`, `scripts/plot_runs.py`、配色と線種は `scripts/plot_style.py`)
   - 書誌情報は確認できたものだけ書く

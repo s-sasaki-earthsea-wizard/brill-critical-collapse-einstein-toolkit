@@ -109,6 +109,13 @@ make bisection-resume EXTRA="--set-outcome 3=collapse"   # after a stop: record 
 make analyze                                    # gamma on both sides, reports/critical_scaling.png
 ```
 
+Figures for the wiki (rendered into `reports/figures/`, which is gitignored):
+
+```bash
+make figures                                    # initial data and Phase 2 gauge figures
+make wiki-figures                               # copy them into ../brill-critical-collapse-einstein-toolkit.wiki/images/
+```
+
 ## Workflow
 
 1. **Bisection** (`scripts/bisection_runner.py`). For each step the
@@ -165,13 +172,17 @@ make analyze                                    # gamma on both sides, reports/c
 │   ├── sim.mk                  # single-run, bisection, dry-run
 │   ├── monitor.mk              # status, monitor
 │   ├── analyze.mk              # analyze
+│   ├── figures.mk              # figures, wiki-figures
 │   └── test.mk                 # check, test
 ├── templates/
-│   └── brill_collapse.par.template   # ET parfile with __AMPLITUDE__ / __FINAL_TIME__
+│   ├── brill_collapse.par.template   # 3D octant parfile with __AMPLITUDE__ / __FINAL_TIME__
+│   └── brill_cartoon.par.template    # Cartoon2D parfile used from Phase 2 on
 ├── par/
 │   ├── mpi_check.par           # MPI communicator sanity check for docker-check
 │   ├── feasibility/            # Phase 1a Cartoon2D tests with Brill-Lindquist black holes
-│   └── initial_data/           # Phase 1b checks of the Brill initial data on the grid
+│   ├── initial_data/           # Phase 1b checks of the Brill initial data on the grid
+│   └── gauge/                  # Phase 2 slicing / shift variants of the Cartoon2D template
+├── patches/                    # source patches to ET thorns, applied in the overlay build
 ├── thorns/
 │   └── BrillCollapse/BrillPsiTable/  # loads the psi table onto the Cactus grid
 ├── scripts/
@@ -180,7 +191,12 @@ make analyze                                    # gamma on both sides, reports/c
 │   ├── run_monitor.py          # memory guard, ETA, `status` command
 │   ├── cactus_outputs.py       # readers for AHFinderDirect / Carpet output
 │   ├── brill_initial_data.py   # 2D Hamiltonian constraint solver, psi table writer
-│   └── analyze_critical_exponent.py  # gamma fit and plot
+│   ├── refine_template.py      # add finer refinement levels to a parfile template
+│   ├── apply_cactus_patches.sh # idempotent application of patches/
+│   ├── analyze_critical_exponent.py  # gamma fit and plot
+│   ├── plot_initial_data.py    # figures of the initial data (ADM mass, psi)
+│   ├── plot_runs.py            # figures comparing finished runs (horizon mass, lapse, curvature)
+│   └── plot_style.py           # shared matplotlib style of the figures
 └── tests/                      # pytest suite (runs inside the container)
 ```
 

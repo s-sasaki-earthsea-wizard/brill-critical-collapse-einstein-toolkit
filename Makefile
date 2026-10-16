@@ -8,6 +8,7 @@
 #   sim.mk      single runs and the bisection campaign
 #   monitor.mk  resource monitoring and ETA
 #   analyze.mk  critical exponent fit
+#   figures.mk  wiki figures
 #   test.mk     syntax checks and the pytest suite
 
 .DEFAULT_GOAL := help
@@ -17,6 +18,7 @@ include makefiles/docker.mk
 include makefiles/sim.mk
 include makefiles/monitor.mk
 include makefiles/analyze.mk
+include makefiles/figures.mk
 include makefiles/test.mk
 
 .PHONY: help
