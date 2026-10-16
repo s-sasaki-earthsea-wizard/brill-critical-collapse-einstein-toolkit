@@ -30,6 +30,7 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
   `575907694783.dkr.ecr.us-west-2.amazonaws.com/gw230529/einstein-toolkit:latest` と同一。
   ローカルタグが消えたら `docker tag` で戻す (ECR タグまで消すと全再ビルド)
 - コンテナは `init: true` (tini が PID 1)。中断した MPI ランのゾンビを回収させるため
+- コンテナの TZ は `Asia/Tokyo` (`.env` の `CONTAINER_TZ`)。status.json やログの時刻は JST
 - コンテナ: `brill-collapse-et`、Jupyter は 8890 (8888: GW150914, 8889: GW230529)
 - 出力は `SIM_OUTPUT_DIR` (既定 `~/brill-collapse-output`、ローカル SSD) →
   コンテナ内 `/home/etuser/simulations`
@@ -136,6 +137,29 @@ SuperLU の直接解法で 512×64 が 0.2 秒。
   原点・軸上・全レベルで同じなので、表の補間誤差は効いていない
 - HDF5 の固定長文字列は、読み出し側のメモリ型を「長さ + 1」にしないと最後の 1 文字が NUL で潰れる
 
+## 判定・二分探索・解析の実装 (2026-10-16)
+
+- **`scripts/outcome_classifier.py`**: 三値判定 (基準はモジュールの docstring)。崩壊は C1 連続検出 (既定 3 回)、
+  C2 質量が減らない (相対 1e-3)、C3 地平線の最小座標半径 (既定 0 = 無効)。分散は D1 曲率不変量の大域最大値が
+  初期値の 1/10 以下を窓 2.0 のあいだ維持、D2 一度も検出なし、D3 t ≥ 5、D4 その後に再成長なし、D5 最小 lapse ≥ 0.5 で
+  下がっていない。分散条件の後に地平線 → undecided。OOM > 崩壊 (後の crash より優先) > crash > 分散 > timeout > undecided。
+  **閾値は全て暫定値**で、Phase 2.5 のパイロットで較正する (`--classifier-config` の JSON で上書き、フィンガープリントに入る)
+- **曲率の入力**: `weylscal4-curvir_group.norm_inf.asc` (WeylScal4 の Re I の全域 |max|、真空で Kretschmann = 16 Re I)。
+  **テンプレートはまだこれを出力しないので、今のテンプレートでは分散と判定されない** (常に undecided)。
+  ファイル名は WeylScal4 を有効にした最初のランで確認すること
+- **早期終了**: 実行中 60 秒ごとに同じ判定を回し、崩壊で M_irr が落ち着いた (窓 max(10M, 1.0) で相対変化 1e-3 以下)
+  か分散が確定したら TerminationTrigger で止める (`--no-early-stop` で無効)
+- **`bisection_history.json`**: 原子的に保存。数値的な族のフィンガープリント (テンプレートの sha256、判定の閾値、
+  t_final、cactus_sim のサイズと mtime、初期データの格子) を持ち、`--resume` で一致しなければ拒否。
+  cactus_sim を再ビルドすると mtime が変わるので、キャンペーン中は `make docker-build` / `make thorn-build` をしない
+- 非決定的な結果・単調性の破れ・端点の不一致で停止 (exit 2)。人が判断したら
+  `make bisection-resume EXTRA="--set-outcome ITER=collapse"` (元の判定は `human_override` に残る) か `EXTRA="--retry"`
+- `--verify-endpoints`: A_MIN が分散、A_MAX が崩壊であることを先に確認
+- テンプレートに `__TABLE_FILE__` があれば、ランごとに初期データを解いて `psi_table.h5` を置く (`--id-n-s` 等)
+- **`scripts/analyze_critical_exponent.py`**: 超臨界 ln M_AH = γ ln(A−A*) + c と亜臨界 ln K_max = −4γ ln(A*−A) + c' の
+  両側でフィット (`make analyze SIDE=both MASS=settled`)。A* は lower / mid / value / fit (非線形、片側 4 点以上)
+- テストは合成出力 (`tests/fake_outputs.py`) で 103 件。A*=4.7 の偽 Cactus で二分探索が端から端まで収束することも確認
+
 ## 決定事項 (2026-10-15)
 
 | 項目 | 決定 | 理由・備考 |
@@ -190,7 +214,7 @@ SuperLU の直接解法で 512×64 が 0.2 秒。
 | 1b | 初期データ (a): Python ソルバ + 補間 thorn。M_ADM(A=5) = 0.70 で検証 (1a と並行可) | ✅ 2026-10-16 (下記) |
 | 2 | ゲージ feasibility: A=5 で 1+log の破綻を再現 → harmonic → shock-avoiding。np/OMP/cpuset のベンチ | 未着手 |
 | 2.5 | パイロットキャンペーン (粗視化): z0、判定閾値の較正、A* の概算、crash の出方 | 未着手 |
-| 3 | 数値的な族の凍結 (η, ε, FD 次数, finder 配置, 判定閾値)、三値判定の実装、既知解テスト | 未着手 |
+| 3 | 数値的な族の凍結 (η, ε, FD 次数, finder 配置, 判定閾値)、三値判定の実装、既知解テスト | 一部: 三値判定・二分探索・両側の γ 解析を実装 (2026-10-16、合成データで検証)。閾値の較正、族の凍結、テンプレートの Cartoon2D 化は未 |
 | 4 | 本番の二分探索キャンペーン | 未着手 |
 | 5 | 超臨界の穴埋めスキャン + γ 解析 (超臨界 M_AH と亜臨界 K_max の両側) | 未着手 |
 

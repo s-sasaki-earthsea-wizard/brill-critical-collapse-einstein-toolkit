@@ -11,11 +11,14 @@ scaling law
 M_AH ∝ (A - A*)^gamma
 ```
 
-> **Status: Phase 1b done.** Runs are monitored (memory guard, ETA), and
-> the evolution, mesh refinement and horizon finder work in axisymmetry
-> with `Cartoon2D` (Phase 1a). The Brill initial data are solved in 2D and
-> loaded onto the grid by a small thorn; the ADM masses reproduce every
-> published value for this family. The gauge test at `A = 5` (Phase 2) is
+> **Status: Phase 1b done, campaign tooling in place.** Runs are
+> monitored (memory guard, ETA), and the evolution, mesh refinement and
+> horizon finder work in axisymmetry with `Cartoon2D` (Phase 1a). The
+> Brill initial data are solved in 2D and loaded onto the grid by a small
+> thorn; the ADM masses reproduce every published value for this family.
+> The three-way classifier, the resumable bisection and the two-sided
+> gamma fit are implemented and tested on synthetic output; their
+> thresholds await calibration. The gauge test at `A = 5` (Phase 2) is
 > next.
 
 ## Plan
@@ -96,30 +99,39 @@ make run-par PAR=par/feasibility/cartoon_bl_single.par CAMPAIGN=feasibility
 make status CAMPAIGN=feasibility
 ```
 
-Once the initial data and the runner are implemented:
+Campaign (once the production template is in place, Phase 3):
 
 ```bash
-make single-run AMP=4.0               # smoke test on the subcritical side
-make bisection                        # full campaign (A_MIN, A_MAX, MAX_ITER, CAMPAIGN)
-make status                           # current amplitude, ETA, memory
-make analyze                          # gamma and reports/critical_scaling.png
+make single-run AMP=4.0                         # one classified run
+make bisection EXTRA="--verify-endpoints"       # check both ends, then bisect (A_MIN, A_MAX, MAX_ITER, CAMPAIGN)
+make status                                     # current amplitude, run and campaign ETA, memory
+make bisection-resume EXTRA="--set-outcome 3=collapse"   # after a stop: record a human verdict
+make analyze                                    # gamma on both sides, reports/critical_scaling.png
 ```
 
 ## Workflow
 
 1. **Bisection** (`scripts/bisection_runner.py`). For each step the
-   runner renders the template at the bracket midpoint, runs
-   `cactus_sim` under `mpirun.mpich`, and classifies the run:
-   - `collapse`: `AHFinderDirect` found a horizon with `M_AH > 0`, so the
-     upper bound moves down;
-   - `dispersion`: no horizon, and the central lapse recovered, so the
-     lower bound moves up;
+   runner renders the template at the bracket midpoint (solving the
+   initial data if the template asks for a table), runs `cactus_sim`
+   under `mpirun.mpich`, and classifies the run
+   (`scripts/outcome_classifier.py`):
+   - `collapse`: a horizon found at consecutive find times with a mass
+     that does not shrink; the upper bound moves down;
+   - `dispersion`: positive evidence only: no horizon ever, the peak
+     curvature invariant far below its initial value for a while and
+     not growing back, and a recovered lapse; the lower bound moves up;
    - `crash`, `oom`, `timeout`, `undecided`: the bracket is left alone
-     and the campaign stops for a human decision.
+     and the campaign stops for a human decision. Missing a horizon and
+     calling dispersion too early would both bias `A*` upwards, so the
+     classifier abstains rather than guesses.
 
-   Every step is appended to `bisection_history.json` in the campaign
-   directory, which also makes the campaign resumable
-   (`make bisection-resume`).
+   Runs stop early once decided (horizon mass settled, or dispersion
+   established). Every run is appended to `bisection_history.json` with
+   its reasons and evidence, together with a fingerprint of the
+   numerical setup; resuming with a different template, classifier
+   thresholds or executable is refused. `--set-outcome ITER=...`
+   records a human verdict for a stopped run, `--retry` reruns it.
 2. **Monitoring.** Resource monitoring and ETA estimation are mandatory
    for every run:
    - memory: the runner samples the container's cgroup v2 accounting and
@@ -131,11 +143,14 @@ make analyze                          # gamma and reports/critical_scaling.png
      the completed runs.
 
    Both go into `status.json`; `make status` and `make monitor` read it.
-3. **Analysis** (`scripts/analyze_critical_exponent.py`). Linear fit of
-   `ln M_AH` against `ln(A - A*)` over the supercritical runs. It prints
-   `gamma` and `R^2` and writes `critical_scaling.png`. `A*` can be the
-   last subcritical bound, the bracket midpoint, an explicit value, or a
-   free parameter of a nonlinear fit.
+3. **Analysis** (`scripts/analyze_critical_exponent.py`). Fits
+   `ln M_AH` against `ln(A - A*)` over the collapse runs and the peak
+   curvature `ln K_max` against `ln(A* - A)` over the dispersion runs
+   (`K_max ~ (A* - A)^(-4 gamma)`), so `gamma` is measured twice,
+   independently. It prints both with their errors and writes
+   `critical_scaling.png`. `A*` can be the last subcritical bound, the
+   bracket midpoint, an explicit value, or a free parameter of a
+   nonlinear fit.
 
 ## Directory layout
 
@@ -160,7 +175,8 @@ make analyze                          # gamma and reports/critical_scaling.png
 ├── thorns/
 │   └── BrillCollapse/BrillPsiTable/  # loads the psi table onto the Cactus grid
 ├── scripts/
-│   ├── bisection_runner.py     # bisection driver
+│   ├── bisection_runner.py     # bisection driver, history, resume
+│   ├── outcome_classifier.py   # collapse / dispersion / undecided
 │   ├── run_monitor.py          # memory guard, ETA, `status` command
 │   ├── cactus_outputs.py       # readers for AHFinderDirect / Carpet output
 │   ├── brill_initial_data.py   # 2D Hamiltonian constraint solver, psi table writer
