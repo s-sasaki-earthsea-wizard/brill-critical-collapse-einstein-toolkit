@@ -20,6 +20,11 @@ services:
     image: brill-collapse-et:local
     container_name: brill-collapse-et
 
+    # tini as PID 1 reaps orphaned processes. Without it, the ranks of an
+    # aborted MPI run stay as zombies under Jupyter Lab, and the
+    # "another cactus_sim is running" check refuses every later run.
+    init: true
+
     # Shared memory for MPICH inter-process communication.
     shm_size: ${CONTAINER_SHM_SIZE:-2gb}
 

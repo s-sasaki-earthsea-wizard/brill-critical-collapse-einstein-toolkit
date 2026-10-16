@@ -1,0 +1,39 @@
+Cactus Code Thorn BrillPsiTable
+Author(s)    : Syota Sasaki
+Maintainer(s): Syota Sasaki
+Licence      : GPL-2.0-or-later
+--------------------------------------------------------------------------
+
+1. Purpose
+
+Time-symmetric Brill wave initial data on any grid (Carpet mesh
+refinement, Cartoon2D, 3D), from a conformal factor solved outside
+Cactus by scripts/brill_initial_data.py.
+
+The metric is
+
+  dl^2 = psi^4 [ e^{k q} (drho^2 + dz^2) + rho^2 dphi^2 ],   K_ij = 0,
+
+with the Holz seed q = A (rho/sigma)^2 exp(-r^2/sigma^2). The table holds
+u = psi - 1 on a cell-centred compactified polar grid,
+r = L tan(pi s / 2), theta in [0, pi/2]. At every grid point, ghost
+zones included, the thorn interpolates u with tensor-product Lagrange
+polynomials (ghosts of the table by parity) and builds the metric from
+psi and the analytic q:
+
+  g_xx = psi^4 (1 + f x^2), g_xy = psi^4 f x y, g_yy = psi^4 (1 + f y^2),
+  g_zz = psi^4 e^{k q},     g_xz = g_yz = 0,
+  f = (e^{k q} - 1) / rho^2 = k (q / rho^2) expm1(k q) / (k q),
+
+which stays exact on the axis since q / rho^2 = (A/sigma^2) e^{-r^2/sigma^2}.
+
+2. Use
+
+  ADMBase::initial_data        = "brill_psi_table"
+  BrillPsiTable::table_file    = "psi_A5.0.h5"
+  BrillPsiTable::amplitude     = 5.0     # checked against the table
+  BrillPsiTable::sigma         = 1.0     # checked against the table
+  BrillPsiTable::exponent_factor = 2     # checked against the table
+
+The table is read and validated at PARAMCHECK, so a wrong file stops
+the run before any memory is allocated.

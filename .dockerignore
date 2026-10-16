@@ -1,8 +1,7 @@
 # Files excluded from the Docker build context
 # =================================================================
-# The overlay Dockerfile copies nothing from the repository yet, so the
-# whole context is excluded. The repository is bind-mounted at run time
-# instead (see docker-compose.yml). Re-include a path here as soon as the
-# image starts copying it, e.g. a custom initial-data thorn under thorns/.
+# Only the project's Cactus thorns are copied into the image; the rest of
+# the repository is bind-mounted at run time (see docker-compose.yml).
 *
 !Dockerfile
+!thorns/
