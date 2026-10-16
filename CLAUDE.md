@@ -137,6 +137,33 @@ SuperLU の直接解法で 512×64 が 0.2 秒。
   原点・軸上・全レベルで同じなので、表の補間誤差は効いていない
 - HDF5 の固定長文字列は、読み出し側のメモリ型を「長さ + 1」にしないと最後の 1 文字が NUL で潰れる
 
+## Phase 2: ゲージ feasibility の途中結果 (2026-10-16)
+
+`templates/brill_cartoon.par.template` (Cartoon2D、4 レベル、最細 dx=0.025、W 法、KO ε=0.1、初期データは runner が
+ランごとに生成、WeylScal4 の不変量、AHFD) のゲージ節だけを差し替えた `par/gauge/*.par.template` を
+`make single-run AMP=... CAMPAIGN=gauge_<v> EXTRA="--template ..."` で回した。
+
+| 変種 | ゲージ | A=5 の結果 |
+| --- | --- | --- |
+| S0 | 1+log + Γ-driver η=1 (仕様) | t=6.2 で crash、AH なし。曲率 |Re I| のピークは赤道面 x≈0.4〜0.9 |
+| S0z | 1+log + シフト 0 | t=5.9 で crash、AH なし (KL 2019 の「1+log は AH 前に破綻」を再現) |
+| S1 / S1z | harmonic + Γ-driver / シフト 0 | t=1.55 / 3.75 で crash (特異点回避が弱い) |
+| **S2** | **shock-avoiding κ=1 + Γ-driver η=1** | **t=8.8 に AH (原点、初期推定 0.5)、M_irr 0.567→0.587**。扁平 (座標半径 0.3〜0.7)。形成後 t=10.05 に地平線内部で crash |
+| **S2z** | **shock-avoiding κ=1 + シフト 0** | 初期推定 0.5 では未検出。初期推定 1.5 で **t=13.3 に AH、M_irr 0.5755→0.5775**。t=25 まで crash なし。座標半径が 1.1→2.2 と膨張して最細レベル (半径 2) からはみ出し、質量が 0.5705 まで下がる |
+
+A=4.0 (S2) は **dispersion と判定、t=5.15 で早期終了** (曲率 463→9.6、lapse の最小値 0.14→0.59)。
+
+- **地平線の質量は KL 2019 (quasi-maximal、A=5: t≈10.25 に AH、M 0.56→0.58) と一致**。M_irr はゲージ不変なので、
+  初期データ→発展→AH 検出のパイプラインの定量検証になった
+- 1+log と harmonic は AH 前に破綻。shock-avoiding は AH まで届くが、Γ-driver では形成後すぐ crash、
+  シフト 0 では地平線が座標上で膨張する
+- どちらも判定器の「質量が落ち着いた」(窓 max(10M,1) で相対 1e-3) を満たさない。Brill の BH は残りの波の降着で
+  ゆっくり育つ (KL でも t=10→20 で 0.56→0.58)。M_AH の定義と閾値は Phase 2.5 / 3 で決める
+- 原点 finder の初期推定は 1 本では足りない (シフト 0 では座標半径 > 1)
+- shock-avoiding には ML_BSSN へのパッチ (`patches/ML_BSSN-shock-avoiding-slicing.patch`、`ML_BSSN::shockAvoidingKappa`)、
+  WeylScal4 を Cartoon2D で使うにはテンソル型のパッチ (`patches/WeylScal4-cartoon-tensortypes.patch`) が要る。
+  どちらもイメージに焼き込み済み (325e1689)。κ=0 で未パッチと、イメージ版とコンテナ内ビルドでビット一致を確認
+
 ## 判定・二分探索・解析の実装 (2026-10-16)
 
 - **`scripts/outcome_classifier.py`**: 三値判定 (基準はモジュールの docstring)。崩壊は C1 連続検出 (既定 3 回)、
@@ -212,7 +239,7 @@ SuperLU の直接解法で 512×64 が 0.2 秒。
 | 0 | スケルトン、テンプレートのパラメータ検証、暫定ベンチ、init commit | ✅ 2026-10-15 |
 | 1a | 監視付き単発実行 (メモリガード + ETA) の実装。**Cartoon2D feasibility**: Brill-Lindquist BH で ML_BSSN + FMR + time refinement + AHFD (軸上 finder 含む) を 3D 八分儀と比較 (完走不要) | ✅ 2026-10-15 成立 (上記) |
 | 1b | 初期データ (a): Python ソルバ + 補間 thorn。M_ADM(A=5) = 0.70 で検証 (1a と並行可) | ✅ 2026-10-16 (下記) |
-| 2 | ゲージ feasibility: A=5 で 1+log の破綻を再現 → harmonic → shock-avoiding。np/OMP/cpuset のベンチ | 未着手 |
+| 2 | ゲージ feasibility: A=5 で 1+log の破綻を再現 → harmonic → shock-avoiding。np/OMP/cpuset のベンチ | 進行中: 1+log の破綻を再現、shock-avoiding で AH 到達 (上記)。形成後の生存とシフトの選択、ベンチは未 |
 | 2.5 | パイロットキャンペーン (粗視化): z0、判定閾値の較正、A* の概算、crash の出方 | 未着手 |
 | 3 | 数値的な族の凍結 (η, ε, FD 次数, finder 配置, 判定閾値)、三値判定の実装、既知解テスト | 一部: 三値判定・二分探索・両側の γ 解析を実装 (2026-10-16、合成データで検証)。閾値の較正、族の凍結、テンプレートの Cartoon2D 化は未 |
 | 4 | 本番の二分探索キャンペーン | 未着手 |
@@ -226,6 +253,8 @@ SuperLU の直接解法で 512×64 が 0.2 秒。
 - **全ランでメモリ監視と ETA を必須とする**。監視なしで cactus_sim を直接起動しない。
   テンプレート以外の parfile も `make run-par PAR=... RUN_NAME=... CAMPAIGN=...` で監視下で回す
 - cactus_sim の二重起動禁止 (`_precheck-idle`、ゾンビは数えない)
+- 標準 thorn への変更は `patches/*.patch` に置き、`scripts/apply_cactus_patches.sh` が冪等に当てる
+  (Dockerfile と `make thorn-build` の両方)。パッチの頭に理由を書く
 - 自作 thorn の開発ループ: `thorns/` を編集 → `make thorn-build` (稼働中コンテナで再コンパイル、約 15 秒)
   → ラン。確定したら `make docker-build` でイメージに焼き込む (コンテナを作り直すとビルドは消える)。
   古いイメージは `docker image prune` で掃除する
