@@ -244,17 +244,17 @@ WeylScal4::WeylScal4_invars_calc_Nth_calc_every = 8
 # =================================================================
 # Apparent horizon finders
 # =================================================================
-#   ah1  origin, octant                (central horizon, common horizon)
-#   ah2  (0, 0, 0.5) on the axis, quadrant
-#   ah3  (0, 0, 1.0) on the axis, quadrant
-# Near the threshold horizons can form as a pair at (0, 0, +-z0)
-# (arXiv:1706.01829, 2205.04379). The axis positions are placeholders
-# until the first runs show where the curvature peaks. On-axis finders
-# need their own initial guess centre (CLAUDE.md, Phase 1a).
+#   ah1-ah3  origin, octant, initial guess radius 0.5, 1.0, 1.5
+#   ah4-ah5  (0, 0, 0.5) and (0, 0, 1.0) on the axis, quadrant
+# One origin guess is not enough: with zero shift the horizon of A = 5
+# appears at coordinate radius > 1 (Phase 2). Near the threshold horizons
+# can also form as a pair at (0, 0, +-z0) (arXiv:1706.01829, 2205.04379).
+# On-axis finders need their own initial guess centre (CLAUDE.md,
+# Phase 1a).
 
 ActiveThorns = "AHFinderDirect"
 
-AHFinderDirect::N_horizons    = 3
+AHFinderDirect::N_horizons    = 5
 AHFinderDirect::find_every    = 16
 AHFinderDirect::verbose_level = "physics details"
 
@@ -265,36 +265,57 @@ AHFinderDirect::surface_interpolator_pars  = "order=4"
 
 AHFinderDirect::output_h_every = 160
 
-AHFinderDirect::patch_system_type[1]                   = "+xyz octant (mirrored)"
-AHFinderDirect::origin_x[1]                            = 0.0
-AHFinderDirect::origin_y[1]                            = 0.0
-AHFinderDirect::origin_z[1]                            = 0.0
-AHFinderDirect::initial_guess__coord_sphere__radius[1] = 0.5
-AHFinderDirect::reset_horizon_after_not_finding[1]     = yes
-AHFinderDirect::find_after_individual_time[1]          = 1.0
-AHFinderDirect::which_surface_to_store_info[1]         = 0
+AHFinderDirect::patch_system_type[1]                     = "+xyz octant (mirrored)"
+AHFinderDirect::origin_x[1]                              = 0.0
+AHFinderDirect::origin_y[1]                              = 0.0
+AHFinderDirect::origin_z[1]                              = 0.0
+AHFinderDirect::initial_guess__coord_sphere__z_center[1] = 0.0
+AHFinderDirect::initial_guess__coord_sphere__radius[1]   = 0.5
+AHFinderDirect::reset_horizon_after_not_finding[1]       = yes
+AHFinderDirect::find_after_individual_time[1]            = 1.0
+AHFinderDirect::which_surface_to_store_info[1]           = 0
 
-AHFinderDirect::patch_system_type[2]                     = "+xy quadrant (mirrored)"
+AHFinderDirect::patch_system_type[2]                     = "+xyz octant (mirrored)"
 AHFinderDirect::origin_x[2]                              = 0.0
 AHFinderDirect::origin_y[2]                              = 0.0
-AHFinderDirect::origin_z[2]                              = 0.5
-AHFinderDirect::initial_guess__coord_sphere__z_center[2] = 0.5
-AHFinderDirect::initial_guess__coord_sphere__radius[2]   = 0.2
+AHFinderDirect::origin_z[2]                              = 0.0
+AHFinderDirect::initial_guess__coord_sphere__z_center[2] = 0.0
+AHFinderDirect::initial_guess__coord_sphere__radius[2]   = 1.0
 AHFinderDirect::reset_horizon_after_not_finding[2]       = yes
 AHFinderDirect::find_after_individual_time[2]            = 1.0
 AHFinderDirect::which_surface_to_store_info[2]           = 1
 
-AHFinderDirect::patch_system_type[3]                     = "+xy quadrant (mirrored)"
+AHFinderDirect::patch_system_type[3]                     = "+xyz octant (mirrored)"
 AHFinderDirect::origin_x[3]                              = 0.0
 AHFinderDirect::origin_y[3]                              = 0.0
-AHFinderDirect::origin_z[3]                              = 1.0
-AHFinderDirect::initial_guess__coord_sphere__z_center[3] = 1.0
-AHFinderDirect::initial_guess__coord_sphere__radius[3]   = 0.2
+AHFinderDirect::origin_z[3]                              = 0.0
+AHFinderDirect::initial_guess__coord_sphere__z_center[3] = 0.0
+AHFinderDirect::initial_guess__coord_sphere__radius[3]   = 1.5
 AHFinderDirect::reset_horizon_after_not_finding[3]       = yes
 AHFinderDirect::find_after_individual_time[3]            = 1.0
 AHFinderDirect::which_surface_to_store_info[3]           = 2
 
-SphericalSurface::nsurfaces = 3
+AHFinderDirect::patch_system_type[4]                     = "+xy quadrant (mirrored)"
+AHFinderDirect::origin_x[4]                              = 0.0
+AHFinderDirect::origin_y[4]                              = 0.0
+AHFinderDirect::origin_z[4]                              = 0.5
+AHFinderDirect::initial_guess__coord_sphere__z_center[4] = 0.5
+AHFinderDirect::initial_guess__coord_sphere__radius[4]   = 0.2
+AHFinderDirect::reset_horizon_after_not_finding[4]       = yes
+AHFinderDirect::find_after_individual_time[4]            = 1.0
+AHFinderDirect::which_surface_to_store_info[4]           = 3
+
+AHFinderDirect::patch_system_type[5]                     = "+xy quadrant (mirrored)"
+AHFinderDirect::origin_x[5]                              = 0.0
+AHFinderDirect::origin_y[5]                              = 0.0
+AHFinderDirect::origin_z[5]                              = 1.0
+AHFinderDirect::initial_guess__coord_sphere__z_center[5] = 1.0
+AHFinderDirect::initial_guess__coord_sphere__radius[5]   = 0.2
+AHFinderDirect::reset_horizon_after_not_finding[5]       = yes
+AHFinderDirect::find_after_individual_time[5]            = 1.0
+AHFinderDirect::which_surface_to_store_info[5]           = 4
+
+SphericalSurface::nsurfaces = 5
 SphericalSurface::maxntheta = 39
 SphericalSurface::maxnphi   = 76
 
