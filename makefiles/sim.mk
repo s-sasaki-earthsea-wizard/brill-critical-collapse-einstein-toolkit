@@ -58,6 +58,11 @@ single-run: _precheck-idle ## Run one amplitude (AMP=...) for smoke tests and be
 	@test -n "$(AMP)" || (echo "Usage: make single-run AMP=<amplitude>" && exit 1)
 	$(COMPOSE) exec -T et $(RUNNER) $(RUNNER_ARGS) --single $(AMP)
 
+.PHONY: run-par
+run-par: _precheck-idle ## Run a parfile as is under the monitor (PAR=..., RUN_NAME=..., CAMPAIGN=...)
+	@test -n "$(PAR)" || (echo "Usage: make run-par PAR=par/<file>.par [RUN_NAME=<name>] [CAMPAIGN=<dir>]" && exit 1)
+	$(COMPOSE) exec -T et $(RUNNER) $(RUNNER_ARGS) --parfile $(PAR) $(if $(RUN_NAME),--run-name $(RUN_NAME))
+
 .PHONY: bisection
 bisection: _precheck-idle ## Run the bisection campaign (A_MIN, A_MAX, MAX_ITER, CAMPAIGN)
 	$(COMPOSE) exec -T et $(RUNNER) $(RUNNER_ARGS)

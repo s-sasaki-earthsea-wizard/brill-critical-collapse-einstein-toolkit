@@ -49,7 +49,7 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
    sync を呼ぶ。Carpet 上では各リファインメントレベルを**そのレベル自身の外縁に
    Robin 条件を置いて独立に解く**ことになり、物理的に誤り。テストスイートも
    PUGH unigrid のみ。dx=0.025 の unigrid は八分儀でも ~640³ 点で非現実的。
-   `CT_Analytic` に Brill モードは無い。→ 代替方式の決定が Phase 1
+   `CT_Analytic` に Brill モードは無い。→ 方式 (a) に決定 (下記「決定事項」)
 2. **ベースイメージに `OMP_NUM_THREADS` と Cactus の PATH が焼かれていない**
    (GW230529 の知見 7 の修正より前のビルド)。オーバーレイの Dockerfile で
    `ENV OMP_NUM_THREADS=1` と PATH を設定、runner も全 rank に `-genv` で渡す
@@ -69,17 +69,68 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
    6-13 が E コア 4.5 GHz、14-15 が LP E コア 2.5 GHz。バルク同期の MPI は最遅 rank に
    律速されるため、cpuset の選び方がそのまま ETA に効く
 
+## Phase 1a: Cartoon2D feasibility の結果 (2026-10-15)
+
+`par/feasibility/` の Brill-Lindquist (BL) テスト。グリッド、時間積分、ゲージ、散逸は Brill テンプレートと同じ
+(4 レベル、最細 dx=0.025、RK4、Courant 0.25、1+log + Γ-driver η=1、KO ε=0.1)。共形因子は W 法。
+`make run-par PAR=... CAMPAIGN=feasibility`、np=4 × OMP=4。
+
+| parfile | 内容 | 結果 |
+| --- | --- | --- |
+| `cartoon_bl_single.par` | m=0.5 を原点に、t=5 | 完走 708 s、**25 /h**、0.9 GiB。M_irr=0.50000 が全区間一定 |
+| `octant_bl_single.par` | 同じ物理を 3D 八分儀で、t=1 | 1578 s、**2.34 /h**、11.6 GiB。t=1 で lapse の中心値と最小値は cartoon と 5e-5 以内、地平線の M_irr と座標半径も一致 |
+| `cartoon_bl_pair.par` | m=0.25 を z=±0.6125 に、t=6 | 完走 908 s、23 /h。軸上 finder (ah2) が M_irr=0.2755 (解析見積もり m(1+m'/2d)=0.2755) で t≈2.9 まで追跡。原点 finder (ah1) は t≈3 に共通地平線を捕捉、M_irr は 0.467→0.4991 |
+| `cartoon_bl_small_l4.par` | m=0.1 (地平線の半径 ≈ 2 セル)、4 レベル | t≤0.6 は未検出、検出後も M_irr 0.095〜0.098 (誤差 2〜5%)、形が数値的に 20% 歪む |
+| `cartoon_bl_small_l6.par` | 同、最細を 2 レベル追加 (dx=0.00625、8〜17 セル) | 完走 1065 s、**6.7 /h**、1.15 GiB。M_irr=0.10000 が t=0 から一定、rmin=rmax |
+
+**結論: ML_BSSN + Carpet FMR + time refinement + AHFD (原点の octant finder と軸上の quadrant finder) は
+Cartoon2D 上で動く。** コストは 3D 八分儀の約 1/10、メモリは 1/13。最細レベルを 2 つ足しても 3D の 4 レベル版より 3 倍速い。
+
+Cartoon2D で必要な設定と注意点:
+
+- `CoordBase::ymin = ymax = 0`、`boundary_shiftout_{x_lower,y_lower,y_upper,z_lower} = 1`、反射対称は z のみ
+- **`CarpetLib::poison_value = 0`**。Cartoon2D は y=0 面の x<0 ゴーストを Lagrange 補間で埋めるが、そのステンシルに
+  ゴースト自身を重み 0 で含む。t=0 の `ML_BSSN::Xt` のゴーストは未設定なので、NaN poison だと 0×NaN=NaN で停止する。
+  代償として、未初期化の値を読んでも NaNChecker では検出できなくなる
+- 軸上 finder は `origin_z[i]` とは別に **`initial_guess__coord_sphere__z_center[i]`** が要る (既定の 0 だと abort)
+- CarpetReduce は Cartoon2D 格子で「領域体積 0」と警告し、norm2 系の値は 3D と比べられない (BL の |H|₂ が 14 倍違った)。
+  x 軸上の H は地平線の外で cartoon/3D 比 0.83〜1.12 と一致。パンクチャ近傍 (急峻な場の回転補間) だけ 3〜5 倍大きい
+- 地平線の分解能の床: 半径 2〜3 セルでは不正確、8 セル以上なら M_irr は 5 桁正確 → R_min ≈ 6〜8 セルが目安
+
+## 決定事項 (2026-10-15)
+
+| 項目 | 決定 | 理由・備考 |
+| --- | --- | --- |
+| 初期データ | **(a)** Python で (ρ,z) の線形楕円型方程式を解き、表を小さな thorn で各 Carpet レベルへ点ごとに補間 | 試行錯誤の速さ優先。ID がグリッド非依存、Cartoon2D と両立、M_ADM が副産物。ET 標準だけで完結させる意義は薄いと判断 |
+| スライシング | 仕様の 1+log で破綻したら **harmonic / shock-avoiding への逸脱を許容** | KL 2019 で A=5 の 1+log 破綻が報告済み。ダメなら別方策でやり直す |
+| 粗視化 | **パイロットキャンペーンのみ**。本番の Courant 数・L1 半径は据え置き | 手戻りリスク。早期終了と np/OMP/cpuset は数値解を変えないので対象外 |
+| 軸対称化 | Cartoon2D を第一候補。Phase 1a の feasibility で判断 | 点数 1/15〜1/20 → 浮いたコストを最細レベルの追加へ |
+| 合格基準 | **G2** で確定 (2026-10-16、Phase 1a で Cartoon2D が成立したため)。G3 はオプション | G1: 閾値のブラケット / G2: Type II らしさ (M_AH→0、亜臨界の曲率 max 増大) / G3: 超臨界・亜臨界の γ 推定が一致 |
+| 判定 | **三値判定** (collapse / dispersion / undecided)。分散も積極的な証拠で示す | 見逃しも早すぎる分散判定も、どちらも A* を過大にする |
+| 数値的な族 | 族 N (ID 設定、グリッド、Courant、FD 次数、ゲージ、ε、AHFD、判定閾値、イメージ) を本番前に凍結し、フィンガープリントで混在を拒否 | 途中で変えるなら新しい族として二分探索をやり直し、旧データは頑健性チェックに回す |
+
 ## 科学的な注意点
 
 - **A\* の文献値**: 中心 Holz 型 (σ=1) で A* ∈ [4.6966875, 4.696703125]
   (擬スペクトル法、Hilditch らのグループ)。本設定 (FD, dx=0.025) の A* は解像度依存でずれる
-- **moving-puncture ゲージは臨界近傍の Brill データで破綻することが報告されている**
-  ([arXiv:1309.5008](https://arxiv.org/abs/1309.5008))。A* 近傍の crash は想定内。
-  runner は crash を勝手にどちらかの側に分類せず、キャンペーンを止めて人間に判断を仰ぐ
-- **臨界近傍では地平線が原点ではなく z 軸上の対称な 2 点に別々にできる**
-  ([arXiv:1706.01829](https://arxiv.org/abs/1706.01829))。原点中心・半径 0.2 の
-  AHFD 1 本では見逃しうる。軸上の地平線 (`"+xy quadrant (mirrored)"` を (0,0,z0) 中心) の追加が必要。
-  その場合の「M_AH」の定義 (2 つの和か、共通地平線か) も決める必要がある
+- **1+log は臨界近傍の Brill データで地平線ができる前に破綻する**。
+  Khirnov & Ledvinka 2019 ([arXiv:1908.06034](https://arxiv.org/abs/1908.06034), ET + Carpet + McLachlan、
+  独自の analytic cartoon、8 次 FD): A=5 (M_ADM = 0.70) で 1+log は t≲4.9 に slice が非滑らかになり crash、
+  **解像度に依らない**。Γ-driver も t≈10 で衝撃波状のシフトを作るので A=5 はシフト 0、
+  検証ランは η = 11.4/σ。quasi-maximal slicing なら A=5 で t≈10.25 に AH (M_irr 0.56→0.58)、
+  A=5.5 で t≈7.5 (0.63→0.73)。Hilditch et al. 2013 ([arXiv:1309.5008](https://arxiv.org/abs/1309.5008)) も同様の破綻を報告。
+  代替: harmonic (`harmonicN=2, harmonicF=1`、パラメータのみ) / shock-avoiding f=1+κ/α²
+  ([arXiv:2207.06376](https://arxiv.org/abs/2207.06376)、ML_BSSN の lapse 右辺へのパッチが要る) /
+  quasi-maximal (楕円型 solve、重い)。BaikalVacuum, LeanBSSNMoL, ML_CCZ4 にも該当パラメータは無い
+- **臨界近傍の曲率の大域ピークは z 軸上で原点から離れた位置**
+  ([arXiv:1706.01829](https://arxiv.org/abs/1706.01829), [arXiv:2205.04379](https://arxiv.org/abs/2205.04379))。
+  地平線は (0,0,±z0) に別々にできうるので、原点中心の AHFD 1 本では見逃しうる。
+  軸上 finder (`"+xy quadrant (mirrored)"` を (0,0,z0) 中心) を追加する。
+  スライシング次第でピークが軸から外れる報告もある (1706.01829)。トーラス型の地平線は AHFD では原理的に見つからない
+- **M_AH の定義**: 個別地平線の落ち着いた M_irr (J=0 なので Christodoulou 質量)。
+  フィットには 1 種類の地平線だけを使い、中心型と軸上ペア型が切り替わる ΔA は窓の端とする。
+  全 finder の BH_diagnostics を残せば定義は後からでも変えられる
+- **文献でも誤判定が起きている**: 1706.01829 は、他で亜臨界とされた振幅の一部が AH を作ると報告
 - **普遍性は無いとする結果が出ている**
   ([Baumgarte et al. 2023, PRL 131, 181401](https://doi.org/10.1103/PhysRevLett.131.181401))。
   測定した γ は「この族・この設定の値」であり、0.3〜0.4 は合否基準ではなく比較対象
@@ -96,18 +147,21 @@ M_AH から `M_AH ∝ (A − A*)^γ` の臨界指数 γ (目標 0.3〜0.4 程度
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | 0 | スケルトン、テンプレートのパラメータ検証、暫定ベンチ、init commit | ✅ 2026-10-15 |
-| 1 | 初期データ方式の決定と実装 (IDBrillData の代替) + 検証 (ADM 質量の文献値比較、拘束違反) | 未着手 |
-| 2 | runner の単発実行 + メモリ監視 + ETA を実装、np/OMP/cpuset とグリッドのベンチ | 未着手 |
-| 3 | 単発 smoke: A=4.0 (分散) / A=6.0 (崩壊)、判定基準と AHFD 設定 (軸上地平線) の確定 | 未着手 |
-| 4 | 判定・二分探索ロジックを実装してキャンペーン実行 | 未着手 |
-| 5 | 超臨界スキャン + γ 解析 | 未着手 |
+| 1a | 監視付き単発実行 (メモリガード + ETA) の実装。**Cartoon2D feasibility**: Brill-Lindquist BH で ML_BSSN + FMR + time refinement + AHFD (軸上 finder 含む) を 3D 八分儀と比較 (完走不要) | ✅ 2026-10-15 成立 (上記) |
+| 1b | 初期データ (a): Python ソルバ + 補間 thorn。M_ADM(A=5) = 0.70 で検証 (1a と並行可) | 未着手 |
+| 2 | ゲージ feasibility: A=5 で 1+log の破綻を再現 → harmonic → shock-avoiding。np/OMP/cpuset のベンチ | 未着手 |
+| 2.5 | パイロットキャンペーン (粗視化): z0、判定閾値の較正、A* の概算、crash の出方 | 未着手 |
+| 3 | 数値的な族の凍結 (η, ε, FD 次数, finder 配置, 判定閾値)、三値判定の実装、既知解テスト | 未着手 |
+| 4 | 本番の二分探索キャンペーン | 未着手 |
+| 5 | 超臨界の穴埋めスキャン + γ 解析 (超臨界 M_AH と亜臨界 K_max の両側) | 未着手 |
 
 ## 開発ルール
 
 - スクリプトは**コンテナの Python 3.8** で動くこと (`from __future__ import annotations`、
   `match` 文や組み込みジェネリクスを実行時に使わない)。`make check` / `make test` はコンテナ内で実行する
 - コード内のコメント、ログ、docstring (Google style) は英語
-- **全ランでメモリ監視と ETA を必須とする**。監視なしで cactus_sim を直接起動しない
+- **全ランでメモリ監視と ETA を必須とする**。監視なしで cactus_sim を直接起動しない。
+  テンプレート以外の parfile も `make run-par PAR=... RUN_NAME=... CAMPAIGN=...` で監視下で回す
 - cactus_sim の二重起動禁止 (`_precheck-idle`)
 - テンプレートに新しいパラメータを書くときは、ベースイメージの param.ccl で実在を確認する
 - セッション記録は `.claude-notes/` (git 管理外)

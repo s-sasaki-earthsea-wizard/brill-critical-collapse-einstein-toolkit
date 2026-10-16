@@ -1,0 +1,347 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
+# Phase 1a feasibility: on-axis horizon pair on a Cartoon2D grid
+# =================================================================
+# Two Brill-Lindquist black holes (m = 0.25 each) on the symmetry axis
+# at z = +-z0, the geometry expected near the Brill threshold, where
+# horizons can form as a pair at (0, 0, +-z0). Same grid, gauge and
+# dissipation as cartoon_bl_single.par; ReflectionSymmetry in z makes
+# the hole at -z0 the mirror image of the one at +z0.
+#
+# Questions this run answers:
+#   1. Does an on-axis finder ("+xy quadrant (mirrored)" centred at
+#      (0, 0, z0)) work through Cartoon2D's symmetry interpolator?
+#   2. Does the origin-centred finder stay silent while the holes are
+#      apart, and pick up the common horizon after they merge?
+#   3. With horizon radius ~ m/2 = 0.125 = 5 finest cells, is the
+#      individual horizon still found?
+#
+# z0 = 0.6125 puts the punctures half a finest cell (0.025) off the
+# grid points. The initial separation 1.225 exceeds the ~0.77 above
+# which equal-mass BL data has no common horizon, and the holes fall
+# together head-on during the run.
+
+Cactus::cctk_run_title     = "Phase 1a: Cartoon2D, on-axis BL pair"
+Cactus::cctk_full_warnings = yes
+Cactus::highlight_warning_messages = no
+
+Cactus::terminate       = "time"
+Cactus::cctk_final_time = 6.0
+
+ActiveThorns = "IOUtil"
+IO::out_dir = "output"
+
+
+# =================================================================
+# Infrastructure
+# =================================================================
+
+ActiveThorns = "
+  AEILocalInterp
+  Fortran
+  GenericFD
+  GSL
+  HDF5
+  InitBase
+  LocalInterp
+  LoopControl
+  Slab
+  SystemTopology
+  TGRtensor
+"
+
+ActiveThorns = "Carpet CarpetLib CarpetInterp CarpetReduce CarpetSlab"
+
+Carpet::verbose           = no
+Carpet::veryverbose       = no
+Carpet::schedule_barriers = no
+Carpet::storage_verbose   = no
+CarpetLib::output_bboxes  = no
+
+# Fill new memory with zeros, not NaN. Cartoon2D fills the x < 0 ghost
+# points of the y = 0 plane by Lagrange interpolation whose stencil
+# includes those ghost points themselves with weight zero. At t = 0 the
+# ML_BSSN::Xt ghosts are still unset, so NaN poison would turn 0 * NaN
+# into NaN (seen in the first run); zeros keep the result exact. The
+# cost is that reads of unset data no longer trip NaNChecker.
+Carpet::poison_new_timelevels = yes
+CarpetLib::poison_new_memory  = yes
+CarpetLib::poison_value       = 0
+
+
+# =================================================================
+# Grid: cartoon plane y = 0, x >= 0, z >= 0
+# =================================================================
+
+ActiveThorns = "Boundary CartGrid3D CoordBase ReflectionSymmetry SymBase Cartoon2D"
+
+CartGrid3D::type = "coordbase"
+
+CoordBase::domainsize = "minmax"
+CoordBase::xmin =  0.0
+CoordBase::ymin =  0.0
+CoordBase::zmin =  0.0
+CoordBase::xmax = 24.0
+CoordBase::ymax =  0.0
+CoordBase::zmax = 24.0
+CoordBase::dx   =  0.2
+CoordBase::dy   =  0.2
+CoordBase::dz   =  0.2
+
+CoordBase::boundary_size_x_lower = 3
+CoordBase::boundary_size_y_lower = 3
+CoordBase::boundary_size_z_lower = 3
+CoordBase::boundary_size_x_upper = 3
+CoordBase::boundary_size_y_upper = 3
+CoordBase::boundary_size_z_upper = 3
+
+# x = 0, y = 0 and z = 0 are interior points; the symmetry zones lie
+# outside them.
+CoordBase::boundary_shiftout_x_lower = 1
+CoordBase::boundary_shiftout_y_lower = 1
+CoordBase::boundary_shiftout_y_upper = 1
+CoordBase::boundary_shiftout_z_lower = 1
+
+Cartoon2D::cartoon_active = yes
+Cartoon2D::order          = 4
+
+ReflectionSymmetry::reflection_z   = yes
+ReflectionSymmetry::avoid_origin_z = no
+
+
+# =================================================================
+# Mesh refinement: same hierarchy as the Brill template
+# =================================================================
+
+ActiveThorns = "CarpetRegrid2"
+
+Carpet::domain_from_coordbase = yes
+Carpet::max_refinement_levels = 4
+Carpet::ghost_size            = 3
+Carpet::use_buffer_zones      = yes
+
+Carpet::prolongation_order_space = 5
+Carpet::prolongation_order_time  = 2
+Carpet::init_fill_timelevels     = yes
+
+Carpet::time_refinement_factors = "[1, 2, 4, 8]"
+
+CarpetRegrid2::regrid_every = 0
+CarpetRegrid2::num_centres  = 1
+CarpetRegrid2::num_levels_1 = 4
+CarpetRegrid2::radius_1[1]  = 12.0
+CarpetRegrid2::radius_1[2]  =  4.0
+CarpetRegrid2::radius_1[3]  =  2.0
+
+
+# =================================================================
+# Time integration
+# =================================================================
+
+ActiveThorns = "MoL Time"
+
+MoL::ODE_Method             = "RK4"
+MoL::MoL_Intermediate_Steps = 4
+MoL::MoL_Num_Scratch_Levels = 1
+
+Time::dtfac = 0.25
+
+
+# =================================================================
+# Spacetime variables and initial data
+# =================================================================
+
+ActiveThorns = "
+  ADMBase
+  ADMCoupling
+  ADMMacros
+  CoordGauge
+  SpaceMask
+  StaticConformal
+  TmunuBase
+  IDAnalyticBH
+"
+
+ADMBase::metric_type       = "physical"
+ADMBase::metric_timelevels = 3
+
+ADMBase::initial_data    = "bl_bh"
+ADMBase::initial_lapse   = "one"
+ADMBase::initial_shift   = "zero"
+ADMBase::initial_dtlapse = "zero"
+ADMBase::initial_dtshift = "zero"
+
+IDAnalyticBH::bl_nbh   = 2
+IDAnalyticBH::bl_x0_1  =  0.0
+IDAnalyticBH::bl_y0_1  =  0.0
+IDAnalyticBH::bl_z0_1  =  0.6125
+IDAnalyticBH::bl_M_1   =  0.25
+IDAnalyticBH::bl_x0_2  =  0.0
+IDAnalyticBH::bl_y0_2  =  0.0
+IDAnalyticBH::bl_z0_2  = -0.6125
+IDAnalyticBH::bl_M_2   =  0.25
+
+
+# =================================================================
+# Evolution: ML_BSSN, same gauge and dissipation as the template
+# =================================================================
+
+ActiveThorns = "ML_BSSN ML_BSSN_Helper NewRad"
+
+ADMBase::evolution_method         = "ML_BSSN"
+ADMBase::lapse_evolution_method   = "ML_BSSN"
+ADMBase::shift_evolution_method   = "ML_BSSN"
+ADMBase::dtlapse_evolution_method = "ML_BSSN"
+ADMBase::dtshift_evolution_method = "ML_BSSN"
+
+ML_BSSN::fdOrder         = 4
+ML_BSSN::conformalMethod = 1
+
+ML_BSSN::harmonicN       = 1
+ML_BSSN::harmonicF       = 2.0
+ML_BSSN::advectLapse     = 1
+ML_BSSN::shiftGammaCoeff = 0.75
+ML_BSSN::advectShift     = 1
+ML_BSSN::betaDriver      = 1.0
+ML_BSSN::minimumLapse    = 1.0e-8
+
+ML_BSSN::initial_boundary_condition = "extrapolate-gammas"
+ML_BSSN::rhs_boundary_condition     = "NewRad"
+Boundary::radpower                  = 2
+
+ML_BSSN::ML_log_confac_bound = "none"
+ML_BSSN::ML_metric_bound     = "none"
+ML_BSSN::ML_Gamma_bound      = "none"
+ML_BSSN::ML_trace_curv_bound = "none"
+ML_BSSN::ML_curv_bound       = "none"
+ML_BSSN::ML_lapse_bound      = "none"
+ML_BSSN::ML_dtlapse_bound    = "none"
+ML_BSSN::ML_shift_bound      = "none"
+ML_BSSN::ML_dtshift_bound    = "none"
+
+ML_BSSN::epsDiss = 0.0
+
+ActiveThorns = "Dissipation SphericalSurface"
+
+Dissipation::order  = 5
+Dissipation::epsdis = 0.1
+Dissipation::vars   = "
+  ML_BSSN::ML_log_confac
+  ML_BSSN::ML_metric
+  ML_BSSN::ML_trace_curv
+  ML_BSSN::ML_curv
+  ML_BSSN::ML_Gamma
+  ML_BSSN::ML_lapse
+  ML_BSSN::ML_shift
+  ML_BSSN::ML_dtlapse
+  ML_BSSN::ML_dtshift
+"
+
+ActiveThorns = "ML_ADMConstraints"
+
+
+# =================================================================
+# Apparent horizon finder
+# =================================================================
+# ah1: common horizon around the origin (absent until the holes merge).
+# ah2: individual horizon on the axis at z0; its mirror image at -z0
+#      follows from the reflection symmetry.
+
+ActiveThorns = "AHFinderDirect"
+
+AHFinderDirect::N_horizons    = 2
+AHFinderDirect::find_every    = 16
+AHFinderDirect::verbose_level = "physics details"
+
+AHFinderDirect::geometry_interpolator_name = "Lagrange polynomial interpolation"
+AHFinderDirect::geometry_interpolator_pars = "order=4"
+AHFinderDirect::surface_interpolator_name  = "Lagrange polynomial interpolation"
+AHFinderDirect::surface_interpolator_pars  = "order=4"
+
+AHFinderDirect::output_h_every = 16
+
+AHFinderDirect::patch_system_type[1]                   = "+xyz octant (mirrored)"
+AHFinderDirect::origin_x[1]                            = 0.0
+AHFinderDirect::origin_y[1]                            = 0.0
+AHFinderDirect::origin_z[1]                            = 0.0
+AHFinderDirect::initial_guess__coord_sphere__radius[1] = 1.0
+AHFinderDirect::reset_horizon_after_not_finding[1]     = yes
+AHFinderDirect::which_surface_to_store_info[1]         = 0
+
+AHFinderDirect::patch_system_type[2]                   = "+xy quadrant (mirrored)"
+AHFinderDirect::origin_x[2]                            = 0.0
+AHFinderDirect::origin_y[2]                            = 0.0
+AHFinderDirect::origin_z[2]                            = 0.6125
+# The initial guess sphere has its own centre, separate from origin_*;
+# left at its default (0, 0, 0) it does not contain the patch origin
+# and AHFinderDirect aborts.
+AHFinderDirect::initial_guess__coord_sphere__z_center[2] = 0.6125
+AHFinderDirect::initial_guess__coord_sphere__radius[2]   = 0.15
+AHFinderDirect::reset_horizon_after_not_finding[2]     = yes
+AHFinderDirect::which_surface_to_store_info[2]         = 1
+
+SphericalSurface::nsurfaces = 2
+SphericalSurface::maxntheta = 39
+SphericalSurface::maxnphi   = 76
+
+
+# =================================================================
+# Run safety
+# =================================================================
+
+ActiveThorns = "NaNChecker"
+
+NaNChecker::check_every     = 8
+NaNChecker::action_if_found = "terminate"
+NaNChecker::check_vars      = "
+  ML_BSSN::ML_log_confac
+  ML_BSSN::ML_metric
+  ML_BSSN::ML_trace_curv
+  ML_BSSN::ML_curv
+  ML_BSSN::ML_Gamma
+  ML_BSSN::ML_lapse
+  ML_BSSN::ML_shift
+"
+
+ActiveThorns = "TerminationTrigger"
+
+TerminationTrigger::termination_from_file   = yes
+TerminationTrigger::create_termination_file = yes
+TerminationTrigger::termination_file        = "TERMINATE"
+TerminationTrigger::check_file_every        = 8
+
+
+# =================================================================
+# Output
+# =================================================================
+
+ActiveThorns = "CarpetIOBasic CarpetIOScalar CarpetIOASCII SystemStatistics"
+
+IOBasic::outInfo_every      = 8
+IOBasic::outInfo_reductions = "minimum maximum"
+IOBasic::outInfo_vars       = "
+  ADMBase::alp
+  ML_ADMConstraints::H
+  Carpet::physical_time_per_hour
+  SystemStatistics::maxrss_mb
+"
+
+IOScalar::outScalar_every      = 8
+IOScalar::one_file_per_group   = yes
+IOScalar::outScalar_reductions = "minimum maximum norm2 norm_inf"
+IOScalar::outScalar_vars       = "
+  ADMBase::lapse
+  ML_ADMConstraints::ML_Ham
+"
+
+IOASCII::one_file_per_group     = yes
+IOASCII::output_symmetry_points = no
+IOASCII::out0D_every            = 8
+IOASCII::out0D_vars             = "ADMBase::lapse"
+
+IOASCII::out1D_every = 128
+IOASCII::out1D_d     = no
+IOASCII::out1D_vars  = "
+  ADMBase::lapse
+  ML_ADMConstraints::ML_Ham
+"

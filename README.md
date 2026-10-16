@@ -11,11 +11,27 @@ scaling law
 M_AH ∝ (A - A*)^gamma
 ```
 
-> **Status: skeleton.** The environment, the parfile template and the
-> script interfaces are in place, but the project cannot produce physics
-> yet: the initial data solver is an open design decision (see
-> [Open issues](#open-issues)), and the bisection, monitoring and
-> analysis logic is still to be implemented.
+> **Status: Phase 1a done.** Runs are monitored (memory guard, ETA).
+> Feasibility tests with Brill-Lindquist black holes show that the
+> evolution, mesh refinement, time refinement and the horizon finder all
+> work in axisymmetry with `Cartoon2D`, about ten times faster than the
+> 3D octant grid. The initial data solver (Phase 1b) is next.
+
+## Plan
+
+| Phase | Content |
+| --- | --- |
+| 1a | Monitored single runs (memory guard, ETA). `Cartoon2D` feasibility with Brill-Lindquist black holes: ML_BSSN + mesh refinement + time refinement + AHFinderDirect, compared with the 3D octant grid |
+| 1b | Initial data: a Python solver for the axisymmetric Hamiltonian constraint, interpolated onto every Carpet level by a small thorn; checked against the published ADM mass (0.70 at `A = 5`) |
+| 2 | Gauge feasibility at `A = 5`: reproduce the reported 1+log failure, then try harmonic and shock-avoiding slicing |
+| 2.5 | Coarse pilot campaign: horizon positions, classifier thresholds, rough `A*` |
+| 3 | Freeze the numerical setup; three-way classifier (collapse / dispersion / undecided); known-answer tests |
+| 4 | Production bisection |
+| 5 | Scaling fits on both sides: `M_AH` above `A*`, maximum curvature below |
+
+Success criterion: with `Cartoon2D`, type II behaviour near the
+threshold (`M_AH → 0` above `A*`, growing peak curvature below it);
+without it, a robust bracket on `A*`. A precise `gamma` is optional.
 
 ## Physical setup
 
@@ -35,7 +51,9 @@ M_AH ∝ (A - A*)^gamma
 
 - Linux host with Docker and Docker Compose v2.
 - The GW230529 project's Einstein Toolkit image (`gw230529-et:local`),
-  which this project overlays. Build it once in
+  which this project overlays. If it exists under another tag (for
+  example a registry tag), `docker tag` it to `gw230529-et:local` or set
+  `BASE_IMAGE` in `.env`. Otherwise build it once in
   [gw230529-einstein-toolkit](https://github.com/s-sasaki-earthsea-wizard/gw230529-einstein-toolkit):
 
   ```bash
@@ -57,6 +75,13 @@ make docker-check        # thorns, OMP_NUM_THREADS=1, MPICH linkage, MPI communi
 make check               # byte-compile the scripts with the container's Python 3.8
 make test                # pytest suite
 make bisection-dry-run   # render the first parfile and print the run plan
+```
+
+Any parfile can run under the monitor, for example a feasibility test:
+
+```bash
+make run-par PAR=par/feasibility/cartoon_bl_single.par CAMPAIGN=feasibility
+make status CAMPAIGN=feasibility
 ```
 
 Once the initial data and the runner are implemented:
@@ -117,7 +142,8 @@ make analyze                          # gamma and reports/critical_scaling.png
 ├── templates/
 │   └── brill_collapse.par.template   # ET parfile with __AMPLITUDE__ / __FINAL_TIME__
 ├── par/
-│   └── mpi_check.par           # MPI communicator sanity check for docker-check
+│   ├── mpi_check.par           # MPI communicator sanity check for docker-check
+│   └── feasibility/            # Phase 1a Cartoon2D tests with Brill-Lindquist black holes
 ├── scripts/
 │   ├── bisection_runner.py     # bisection driver
 │   ├── run_monitor.py          # memory guard, ETA, `status` command
@@ -146,18 +172,23 @@ Campaign output goes to `SIM_OUTPUT_DIR` on the host (default
   Holz q function, but solves the Hamiltonian constraint with the
   PUGH-era `EllSOR` solver, which only works on a unigrid. On a Carpet
   refinement hierarchy it would solve every level independently with its
-  own outer boundary condition. A unigrid run at `dx = 0.025` is out of
-  reach, so a Carpet-compatible solver (or an imported 2D solution) is
-  needed.
-- **Gauge near the threshold.** Moving-puncture gauge is reported to
-  fail for near-critical Brill data
-  ([Hilditch et al. 2013](https://arxiv.org/abs/1309.5008)), so crashes
-  close to `A*` are expected.
-- **Off-centre horizons.** Near the threshold this family forms disjoint
-  apparent horizons around curvature peaks on the symmetry axis, away
-  from the origin
-  ([Hilditch et al. 2017](https://arxiv.org/abs/1706.01829)). A single
-  origin-centred horizon finder can miss them.
+  own outer boundary condition. This project therefore solves the
+  axisymmetric constraint in Python and interpolates the solution onto
+  the grid (Phase 1b).
+- **Gauge near the threshold.** 1+log slicing fails for near-critical
+  Brill data before a horizon forms: at `A = 5` (`A* ≈ 4.7`) the slices
+  become non-smooth at `t ≲ 4.9` at any resolution
+  ([Khirnov & Ledvinka 2019](https://arxiv.org/abs/1908.06034); see also
+  [Hilditch et al. 2013](https://arxiv.org/abs/1309.5008)). Harmonic and
+  shock-avoiding slicing
+  ([Baumgarte & Hilditch 2022](https://arxiv.org/abs/2207.06376)) are
+  the planned fallbacks.
+- **Off-centre horizons.** Near the threshold the global curvature peak
+  sits on the symmetry axis, away from the origin
+  ([Hilditch et al. 2017](https://arxiv.org/abs/1706.01829);
+  [Suárez Fernández et al. 2022](https://arxiv.org/abs/2205.04379)), so
+  horizons can form as a pair at `(0, 0, ±z0)`. A single origin-centred
+  horizon finder can miss them; on-axis finders are added.
 - **Universality.** Recent multi-code work finds no universal critical
   solution for vacuum collapse
   ([Baumgarte et al. 2023](https://doi.org/10.1103/PhysRevLett.131.181401)),
