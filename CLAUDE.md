@@ -289,3 +289,12 @@ A=4.0 (S2) は **dispersion と判定、t=5.15 で早期終了** (曲率 463→9
 - 初期データの表は `make id-table A=...` で `SIM_OUTPUT_DIR/tables/holz_A<A>_k2_<n_s>x<n_theta>.h5` に作る
 - テンプレートに新しいパラメータを書くときは、ベースイメージの param.ccl で実在を確認する
 - セッション記録は `.claude-notes/` (git 管理外)
+- **解説 Wiki** (GitHub Wiki、https://github.com/s-sasaki-earthsea-wizard/brill-critical-collapse-einstein-toolkit/wiki):
+  一般相対論の基礎を知る初学者向けの読み物 (日本語、数式は GitHub の `$...$` / `$$...$$`)。作業用クローンは
+  兄弟ディレクトリ `../brill-critical-collapse-einstein-toolkit.wiki` (master に直接 push)。
+  ページ: Home, Critical-Phenomena, Brill-Waves, Numerical-Relativity-Primer, Project-Pipeline, Findings,
+  Glossary, References, _Sidebar
+  - 新しい知見は **Findings** に日付付きで追記し、関係する解説ページも更新する。数値の一次情報は CLAUDE.md
+  - 作図スクリプトの図は Wiki の `images/` に置いてページに載せる (Wiki は .md を全てページにするので、
+    `images/` に .md を置かない)
+  - 書誌情報は確認できたものだけ書く
