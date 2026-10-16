@@ -1,0 +1,292 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
+# Phase 1b: Brill initial data from the conformal factor table
+# =================================================================
+# Loads the A = 5 Holz Brill wave (sigma = 1, e^{2q}) from the table
+# written by
+#
+#   make id-table A=5.0
+#
+# onto the Cartoon2D grid of the feasibility tests and stops after the
+# initial data (iteration 0). Outputs for the checks:
+#   - BrillPsiTable::psi on the x and z axes, compared with the same
+#     interpolation in scripts/brill_initial_data.py;
+#   - the Hamiltonian constraint on the x and z axes, which must fall
+#     at 4th order (ML_ADMConstraints' stencils) between this run and
+#     brill_id_check_hires.par if the table interpolation error is
+#     negligible.
+
+Cactus::cctk_run_title     = "Phase 1b: Brill initial data check, A = 5"
+Cactus::cctk_full_warnings = yes
+Cactus::highlight_warning_messages = no
+
+Cactus::terminate       = "iteration"
+Cactus::cctk_itlast     = 0
+
+ActiveThorns = "IOUtil"
+IO::out_dir = "output"
+
+
+# =================================================================
+# Infrastructure
+# =================================================================
+
+ActiveThorns = "
+  AEILocalInterp
+  Fortran
+  GenericFD
+  GSL
+  HDF5
+  InitBase
+  LocalInterp
+  LoopControl
+  Slab
+  SystemTopology
+  TGRtensor
+"
+
+ActiveThorns = "Carpet CarpetLib CarpetInterp CarpetReduce CarpetSlab"
+
+Carpet::verbose           = no
+Carpet::veryverbose       = no
+Carpet::schedule_barriers = no
+Carpet::storage_verbose   = no
+CarpetLib::output_bboxes  = no
+
+# Fill new memory with zeros, not NaN. Cartoon2D fills the x < 0 ghost
+# points of the y = 0 plane by Lagrange interpolation whose stencil
+# includes those ghost points themselves with weight zero. At t = 0 the
+# ML_BSSN::Xt ghosts are still unset, so NaN poison would turn 0 * NaN
+# into NaN (seen in the first run); zeros keep the result exact. The
+# cost is that reads of unset data no longer trip NaNChecker.
+Carpet::poison_new_timelevels = yes
+CarpetLib::poison_new_memory  = yes
+CarpetLib::poison_value       = 0
+
+
+# =================================================================
+# Grid: cartoon plane y = 0, x >= 0, z >= 0
+# =================================================================
+
+ActiveThorns = "Boundary CartGrid3D CoordBase ReflectionSymmetry SymBase Cartoon2D"
+
+CartGrid3D::type = "coordbase"
+
+CoordBase::domainsize = "minmax"
+CoordBase::xmin =  0.0
+CoordBase::ymin =  0.0
+CoordBase::zmin =  0.0
+CoordBase::xmax = 24.0
+CoordBase::ymax =  0.0
+CoordBase::zmax = 24.0
+CoordBase::dx   =  0.2
+CoordBase::dy   =  0.2
+CoordBase::dz   =  0.2
+
+CoordBase::boundary_size_x_lower = 3
+CoordBase::boundary_size_y_lower = 3
+CoordBase::boundary_size_z_lower = 3
+CoordBase::boundary_size_x_upper = 3
+CoordBase::boundary_size_y_upper = 3
+CoordBase::boundary_size_z_upper = 3
+
+# x = 0, y = 0 and z = 0 are interior points; the symmetry zones lie
+# outside them.
+CoordBase::boundary_shiftout_x_lower = 1
+CoordBase::boundary_shiftout_y_lower = 1
+CoordBase::boundary_shiftout_y_upper = 1
+CoordBase::boundary_shiftout_z_lower = 1
+
+Cartoon2D::cartoon_active = yes
+Cartoon2D::order          = 4
+
+ReflectionSymmetry::reflection_z   = yes
+ReflectionSymmetry::avoid_origin_z = no
+
+
+# =================================================================
+# Mesh refinement: same hierarchy as the Brill template
+# =================================================================
+
+ActiveThorns = "CarpetRegrid2"
+
+Carpet::domain_from_coordbase = yes
+Carpet::max_refinement_levels = 4
+Carpet::ghost_size            = 3
+Carpet::use_buffer_zones      = yes
+
+Carpet::prolongation_order_space = 5
+Carpet::prolongation_order_time  = 2
+Carpet::init_fill_timelevels     = yes
+
+Carpet::time_refinement_factors = "[1, 2, 4, 8]"
+
+CarpetRegrid2::regrid_every = 0
+CarpetRegrid2::num_centres  = 1
+CarpetRegrid2::num_levels_1 = 4
+CarpetRegrid2::radius_1[1]  = 12.0
+CarpetRegrid2::radius_1[2]  =  4.0
+CarpetRegrid2::radius_1[3]  =  2.0
+
+
+# =================================================================
+# Time integration
+# =================================================================
+
+ActiveThorns = "MoL Time"
+
+MoL::ODE_Method             = "RK4"
+MoL::MoL_Intermediate_Steps = 4
+MoL::MoL_Num_Scratch_Levels = 1
+
+Time::dtfac = 0.25
+
+
+# =================================================================
+# Spacetime variables and initial data
+# =================================================================
+
+ActiveThorns = "
+  ADMBase
+  ADMCoupling
+  ADMMacros
+  CoordGauge
+  SpaceMask
+  StaticConformal
+  TmunuBase
+  BrillPsiTable
+"
+
+ADMBase::metric_type       = "physical"
+ADMBase::metric_timelevels = 3
+
+ADMBase::initial_data    = "brill_psi_table"
+ADMBase::initial_lapse   = "one"
+ADMBase::initial_shift   = "zero"
+ADMBase::initial_dtlapse = "zero"
+ADMBase::initial_dtshift = "zero"
+
+BrillPsiTable::table_file      = "/home/etuser/simulations/tables/holz_A5.0_k2_512x64.h5"
+BrillPsiTable::amplitude       = 5.0
+BrillPsiTable::sigma           = 1.0
+BrillPsiTable::exponent_factor = 2
+
+
+# =================================================================
+# Evolution: ML_BSSN, same gauge and dissipation as the template
+# =================================================================
+
+ActiveThorns = "ML_BSSN ML_BSSN_Helper NewRad"
+
+ADMBase::evolution_method         = "ML_BSSN"
+ADMBase::lapse_evolution_method   = "ML_BSSN"
+ADMBase::shift_evolution_method   = "ML_BSSN"
+ADMBase::dtlapse_evolution_method = "ML_BSSN"
+ADMBase::dtshift_evolution_method = "ML_BSSN"
+
+ML_BSSN::fdOrder         = 4
+
+ML_BSSN::harmonicN       = 1
+ML_BSSN::harmonicF       = 2.0
+ML_BSSN::advectLapse     = 1
+ML_BSSN::shiftGammaCoeff = 0.75
+ML_BSSN::advectShift     = 1
+ML_BSSN::betaDriver      = 1.0
+ML_BSSN::minimumLapse    = 1.0e-8
+
+ML_BSSN::initial_boundary_condition = "extrapolate-gammas"
+ML_BSSN::rhs_boundary_condition     = "NewRad"
+Boundary::radpower                  = 2
+
+ML_BSSN::ML_log_confac_bound = "none"
+ML_BSSN::ML_metric_bound     = "none"
+ML_BSSN::ML_Gamma_bound      = "none"
+ML_BSSN::ML_trace_curv_bound = "none"
+ML_BSSN::ML_curv_bound       = "none"
+ML_BSSN::ML_lapse_bound      = "none"
+ML_BSSN::ML_dtlapse_bound    = "none"
+ML_BSSN::ML_shift_bound      = "none"
+ML_BSSN::ML_dtshift_bound    = "none"
+
+ML_BSSN::epsDiss = 0.0
+
+ActiveThorns = "Dissipation SphericalSurface"
+
+Dissipation::order  = 5
+Dissipation::epsdis = 0.1
+Dissipation::vars   = "
+  ML_BSSN::ML_log_confac
+  ML_BSSN::ML_metric
+  ML_BSSN::ML_trace_curv
+  ML_BSSN::ML_curv
+  ML_BSSN::ML_Gamma
+  ML_BSSN::ML_lapse
+  ML_BSSN::ML_shift
+  ML_BSSN::ML_dtlapse
+  ML_BSSN::ML_dtshift
+"
+
+ActiveThorns = "ML_ADMConstraints"
+
+
+# =================================================================
+# Run safety
+# =================================================================
+
+ActiveThorns = "NaNChecker"
+
+NaNChecker::check_every     = 8
+NaNChecker::action_if_found = "terminate"
+NaNChecker::check_vars      = "
+  ML_BSSN::ML_log_confac
+  ML_BSSN::ML_metric
+  ML_BSSN::ML_trace_curv
+  ML_BSSN::ML_curv
+  ML_BSSN::ML_Gamma
+  ML_BSSN::ML_lapse
+  ML_BSSN::ML_shift
+"
+
+ActiveThorns = "TerminationTrigger"
+
+TerminationTrigger::termination_from_file   = yes
+TerminationTrigger::create_termination_file = yes
+TerminationTrigger::termination_file        = "TERMINATE"
+TerminationTrigger::check_file_every        = 8
+
+
+# =================================================================
+# Output
+# =================================================================
+
+ActiveThorns = "CarpetIOBasic CarpetIOScalar CarpetIOASCII SystemStatistics"
+
+IOBasic::outInfo_every      = 8
+IOBasic::outInfo_reductions = "minimum maximum"
+IOBasic::outInfo_vars       = "
+  ADMBase::alp
+  ML_ADMConstraints::H
+  Carpet::physical_time_per_hour
+  SystemStatistics::maxrss_mb
+"
+
+IOScalar::outScalar_every      = 8
+IOScalar::one_file_per_group   = yes
+IOScalar::outScalar_reductions = "minimum maximum norm2 norm_inf"
+IOScalar::outScalar_vars       = "
+  ADMBase::lapse
+  ML_ADMConstraints::ML_Ham
+"
+
+IOASCII::one_file_per_group     = yes
+IOASCII::output_symmetry_points = no
+IOASCII::out0D_every            = 8
+IOASCII::out0D_vars             = "ADMBase::lapse"
+
+IOASCII::out1D_every = 1
+IOASCII::out1D_d     = no
+IOASCII::out1D_vars  = "
+  BrillPsiTable::psi
+  ADMBase::metric
+  ML_ADMConstraints::ML_Ham
+"

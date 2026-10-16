@@ -11,11 +11,12 @@ scaling law
 M_AH ∝ (A - A*)^gamma
 ```
 
-> **Status: Phase 1a done.** Runs are monitored (memory guard, ETA).
-> Feasibility tests with Brill-Lindquist black holes show that the
-> evolution, mesh refinement, time refinement and the horizon finder all
-> work in axisymmetry with `Cartoon2D`, about ten times faster than the
-> 3D octant grid. The initial data solver (Phase 1b) is next.
+> **Status: Phase 1b done.** Runs are monitored (memory guard, ETA), and
+> the evolution, mesh refinement and horizon finder work in axisymmetry
+> with `Cartoon2D` (Phase 1a). The Brill initial data are solved in 2D and
+> loaded onto the grid by a small thorn; the ADM masses reproduce every
+> published value for this family. The gauge test at `A = 5` (Phase 2) is
+> next.
 
 ## Plan
 
@@ -76,6 +77,17 @@ make check               # byte-compile the scripts with the container's Python 
 make test                # pytest suite
 make bisection-dry-run   # render the first parfile and print the run plan
 ```
+
+Initial data: solve the constraint for one amplitude and write the table
+that the `BrillPsiTable` thorn loads (`SIM_OUTPUT_DIR/tables/`):
+
+```bash
+make id-table A=5.0
+make run-par PAR=par/initial_data/brill_id_check.par CAMPAIGN=initial_data
+```
+
+After editing a thorn under `thorns/`, `make thorn-build` recompiles it
+in the running container; `make docker-build` bakes it into the image.
 
 Any parfile can run under the monitor, for example a feasibility test:
 
@@ -143,11 +155,15 @@ make analyze                          # gamma and reports/critical_scaling.png
 │   └── brill_collapse.par.template   # ET parfile with __AMPLITUDE__ / __FINAL_TIME__
 ├── par/
 │   ├── mpi_check.par           # MPI communicator sanity check for docker-check
-│   └── feasibility/            # Phase 1a Cartoon2D tests with Brill-Lindquist black holes
+│   ├── feasibility/            # Phase 1a Cartoon2D tests with Brill-Lindquist black holes
+│   └── initial_data/           # Phase 1b checks of the Brill initial data on the grid
+├── thorns/
+│   └── BrillCollapse/BrillPsiTable/  # loads the psi table onto the Cactus grid
 ├── scripts/
 │   ├── bisection_runner.py     # bisection driver
 │   ├── run_monitor.py          # memory guard, ETA, `status` command
 │   ├── cactus_outputs.py       # readers for AHFinderDirect / Carpet output
+│   ├── brill_initial_data.py   # 2D Hamiltonian constraint solver, psi table writer
 │   └── analyze_critical_exponent.py  # gamma fit and plot
 └── tests/                      # pytest suite (runs inside the container)
 ```
@@ -170,11 +186,15 @@ Campaign output goes to `SIM_OUTPUT_DIR` on the host (default
 
 - **Initial data.** The stock `IDBrillData` thorn implements exactly the
   Holz q function, but solves the Hamiltonian constraint with the
-  PUGH-era `EllSOR` solver, which only works on a unigrid. On a Carpet
-  refinement hierarchy it would solve every level independently with its
-  own outer boundary condition. This project therefore solves the
-  axisymmetric constraint in Python and interpolates the solution onto
-  the grid (Phase 1b).
+  PUGH-era `EllSOR` solver, which only works on a unigrid. This project
+  solves the axisymmetric constraint in Python
+  (`scripts/brill_initial_data.py`, 6th-order, compactified polar grid)
+  and the `BrillPsiTable` thorn interpolates it onto the grid. The ADM
+  masses agree with [Hilditch et al. 2017](https://arxiv.org/abs/1706.01829)
+  and [Khirnov & Ledvinka 2019](https://arxiv.org/abs/1908.06034) to all
+  quoted digits; the oblate masses quoted in
+  [Hilditch et al. 2013](https://arxiv.org/abs/1309.5008) (Sec. IV.3) do
+  not match and look like a transcription error.
 - **Gauge near the threshold.** 1+log slicing fails for near-critical
   Brill data before a horizon forms: at `A = 5` (`A* ≈ 4.7`) the slices
   become non-smooth at `t ≲ 4.9` at any resolution

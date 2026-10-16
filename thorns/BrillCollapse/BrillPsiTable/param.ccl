@@ -1,0 +1,40 @@
+# Parameter definitions for thorn BrillPsiTable
+
+SHARES: ADMBase
+
+EXTENDS KEYWORD initial_data
+{
+  "brill_psi_table" :: "Time-symmetric Brill wave from a conformal factor table"
+}
+
+PRIVATE:
+
+STRING table_file "HDF5 file written by scripts/brill_initial_data.py (absolute or relative to the working directory)"
+{
+  ".*" :: "path"
+} ""
+
+CCTK_REAL amplitude "Expected Brill amplitude A; must match the table"
+{
+  *:* :: "any"
+} 0.0
+
+CCTK_REAL sigma "Expected width sigma; must match the table"
+{
+  (0:* :: "positive"
+} 1.0
+
+CCTK_INT exponent_factor "Expected k in e^{k q}; must match the table"
+{
+  1:2 :: "1 or 2 (2 is the standard convention)"
+} 2
+
+CCTK_REAL match_tolerance "Relative tolerance when comparing amplitude and sigma with the table"
+{
+  0:* :: "non-negative"
+} 1.0e-12
+
+CCTK_INT interpolation_points "Lagrange stencil width per direction (interpolation order + 1)"
+{
+  2:12:2 :: "even, so the stencil is centred"
+} 8

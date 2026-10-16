@@ -60,6 +60,15 @@ docker-logs: ## Follow the container logs
 docker-ps: ## Show container status
 	$(COMPOSE) ps
 
+.PHONY: thorn-build
+thorn-build: ## Recompile the project thorns in the running container (dev loop; docker-build makes it permanent)
+	$(COMPOSE) exec -T et bash -lc '\
+		cp -a /home/etuser/work/thorns/. $(CACTUS_HOME)/arrangements/ && \
+		cd $(CACTUS_HOME) && \
+		make sim PROMPT=no -j$$(getconf _NPROCESSORS_ONLN) > /home/etuser/simulations/build_project_thorns.log 2>&1 \
+		|| (tail -40 /home/etuser/simulations/build_project_thorns.log; exit 1)'
+	@echo "Project thorns rebuilt in $(CONTAINER_NAME); run make docker-build to keep them."
+
 .PHONY: docker-check
 docker-check: ## Verify thorns, OpenMP pinning and MPI linkage inside the container
 	@echo "== Thorns compiled into the binary (CST ThornList) =="
@@ -81,6 +90,9 @@ docker-check: ## Verify thorns, OpenMP pinning and MPI linkage inside the contai
 		compiled CactusBase/CoordBase; \
 		compiled EinsteinAnalysis/AHFinderDirect; \
 		compiled CactusUtils/NaNChecker; \
+		compiled CactusNumerical/Cartoon2D; \
+		compiled EinsteinInitialData/IDAnalyticBH; \
+		compiled BrillCollapse/BrillPsiTable; \
 		compiled CactusUtils/SystemStatistics; \
 		compiled CactusUtils/TerminationTrigger; \
 		compiled Carpet/CarpetRegrid2; \
