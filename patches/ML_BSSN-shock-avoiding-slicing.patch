@@ -1,0 +1,63 @@
+ML_BSSN: shock-avoiding slicing, d/dt alpha = -(alpha^2 + kappa) K
+====================================================================
+Adds the parameter ML_BSSN::shockAvoidingKappa (default 0) and turns the
+lapse condition d/dt alpha = -f alpha^n (K + alphaDriver (alpha - 1)) into
+-(f alpha^n + kappa) (K + alphaDriver (alpha - 1)). With harmonicN = 2,
+harmonicF = 1 this is the Bona-Masso condition with Alcubierre's
+shock-avoiding f(alpha) = 1 + kappa/alpha^2 (Baumgarte & Hilditch 2022,
+arXiv:2207.06376: kappa = 1 or 2/3). kappa = 0 reproduces the stock code.
+
+The lapse condition appears in four Kranc-generated files (the evolution
+right-hand side, its analysis copy, the split-by-1 variant and the ADMBase
+dtalp). Only the evolveA = 0 path is changed; with evolveA = 1 the lapse
+is not driven by this expression. Applied to the Cactus tree by
+scripts/apply_cactus_patches.sh.
+
+--- a/arrangements/McLachlan/ML_BSSN/param.ccl
++++ b/arrangements/McLachlan/ML_BSSN/param.ccl
+@@ -70,4 +70,9 @@
+ } 1
+ 
++CCTK_REAL shockAvoidingKappa "d/dt alpha = - (f alpha^n + kappa) K; harmonicN = 2, harmonicF = 1 and kappa > 0 give shock-avoiding slicing (project patch)" STEERABLE=RECOVER
++{
++  0:* :: "non-negative; 0 leaves the slicing unchanged"
++} 0
++
+ restricted:
+ CCTK_REAL alphaDriver "d/dt alpha = ... - alphaDriver (alpha - 1)   (use 1/M (?))"
+--- a/arrangements/McLachlan/ML_BSSN/src/ML_BSSN_ADMBaseInterior.cc
++++ b/arrangements/McLachlan/ML_BSSN/src/ML_BSSN_ADMBaseInterior.cc
+@@ -904,5 +904,5 @@
+     CCTK_REAL_VEC dotalpha CCTK_ATTRIBUTE_UNUSED = 
+       kneg(kmul(kmul(IfThen(evolveA != 
+-      0,AL,kmadd(ToReal(alphaDriver),kadd(ToReal(-1),alphaL),trKL)),kpow(alphaL,harmonicN)),ToReal(harmonicF)));
++      0,AL,kmadd(ToReal(alphaDriver),kadd(ToReal(-1),alphaL),trKL)),kmadd(kpow(alphaL,harmonicN),ToReal(harmonicF),ToReal(shockAvoidingKappa))),ToReal(1)));
+     
+     CCTK_REAL_VEC betaDriverValue CCTK_ATTRIBUTE_UNUSED = 
+--- a/arrangements/McLachlan/ML_BSSN/src/ML_BSSN_EvolutionAnalysisInterior.cc
++++ b/arrangements/McLachlan/ML_BSSN/src/ML_BSSN_EvolutionAnalysisInterior.cc
+@@ -4785,5 +4785,5 @@
+     CCTK_REAL_VEC dotalpha CCTK_ATTRIBUTE_UNUSED = 
+       kneg(kmul(kmul(IfThen(evolveA != 
+-      0,AL,kmadd(ToReal(alphaDriver),kadd(ToReal(-1),alphaL),trKL)),kpow(alphaL,harmonicN)),ToReal(harmonicF)));
++      0,AL,kmadd(ToReal(alphaDriver),kadd(ToReal(-1),alphaL),trKL)),kmadd(kpow(alphaL,harmonicN),ToReal(harmonicF),ToReal(shockAvoidingKappa))),ToReal(1)));
+     
+     CCTK_REAL_VEC alpharhsL CCTK_ATTRIBUTE_UNUSED = 
+--- a/arrangements/McLachlan/ML_BSSN/src/ML_BSSN_EvolutionInterior.cc
++++ b/arrangements/McLachlan/ML_BSSN/src/ML_BSSN_EvolutionInterior.cc
+@@ -4785,5 +4785,5 @@
+     CCTK_REAL_VEC dotalpha CCTK_ATTRIBUTE_UNUSED = 
+       kneg(kmul(kmul(IfThen(evolveA != 
+-      0,AL,kmadd(ToReal(alphaDriver),kadd(ToReal(-1),alphaL),trKL)),kpow(alphaL,harmonicN)),ToReal(harmonicF)));
++      0,AL,kmadd(ToReal(alphaDriver),kadd(ToReal(-1),alphaL),trKL)),kmadd(kpow(alphaL,harmonicN),ToReal(harmonicF),ToReal(shockAvoidingKappa))),ToReal(1)));
+     
+     CCTK_REAL_VEC alpharhsL CCTK_ATTRIBUTE_UNUSED = 
+--- a/arrangements/McLachlan/ML_BSSN/src/ML_BSSN_EvolutionInteriorSplitBy1.cc
++++ b/arrangements/McLachlan/ML_BSSN/src/ML_BSSN_EvolutionInteriorSplitBy1.cc
+@@ -2013,5 +2013,5 @@
+     CCTK_REAL_VEC dotalpha CCTK_ATTRIBUTE_UNUSED = 
+       kneg(kmul(kmul(IfThen(evolveA != 
+-      0,AL,kmadd(ToReal(alphaDriver),kadd(ToReal(-1),alphaL),trKL)),kpow(alphaL,harmonicN)),ToReal(harmonicF)));
++      0,AL,kmadd(ToReal(alphaDriver),kadd(ToReal(-1),alphaL),trKL)),kmadd(kpow(alphaL,harmonicN),ToReal(harmonicF),ToReal(shockAvoidingKappa))),ToReal(1)));
+     
+     CCTK_REAL_VEC alpharhsL CCTK_ATTRIBUTE_UNUSED = 
