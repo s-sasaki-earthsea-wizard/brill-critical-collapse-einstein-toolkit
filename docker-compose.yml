@@ -25,6 +25,10 @@ services:
     # "another cactus_sim is running" check refuses every later run.
     init: true
 
+    # Local time for logs, status.json and Cactus output headers.
+    environment:
+      TZ: ${CONTAINER_TZ:-Asia/Tokyo}
+
     # Shared memory for MPICH inter-process communication.
     shm_size: ${CONTAINER_SHM_SIZE:-2gb}
 

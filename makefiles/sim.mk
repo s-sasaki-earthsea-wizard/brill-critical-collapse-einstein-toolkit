@@ -26,6 +26,13 @@ MAX_ITER ?= 7
 # Physical end time of every run.
 T_FINAL ?= 30.0
 
+# Extra runner options, e.g.
+#   make bisection EXTRA="--verify-endpoints"
+#   make bisection-resume EXTRA="--set-outcome 3=collapse"
+#   make bisection-resume EXTRA="--retry"
+#   make bisection EXTRA="--classifier-config classifier.json"
+EXTRA ?=
+
 # Campaign name: one directory per campaign under SIM_OUTPUT_DIR.
 CAMPAIGN ?= bisection
 RUNS_DIR := /home/etuser/simulations/$(CAMPAIGN)
@@ -35,7 +42,7 @@ RUNNER_ARGS = \
 	--a-min $(A_MIN) --a-max $(A_MAX) --max-iter $(MAX_ITER) \
 	--t-final $(T_FINAL) \
 	--np $(SIM_MPI_PROCS) --omp $(SIM_OMP_THREADS) \
-	--runs-dir $(RUNS_DIR)
+	--runs-dir $(RUNS_DIR) $(EXTRA)
 
 # Refuse to start while another cactus_sim is running in the container:
 # two concurrent runs halve the speed of both and break the ETA, and the
@@ -56,7 +63,7 @@ bisection-dry-run: ## Render the first bisection parfile and print the run plan 
 	$(COMPOSE) exec -T et $(RUNNER) $(RUNNER_ARGS) --dry-run
 
 .PHONY: single-run
-single-run: _precheck-idle ## Run one amplitude (AMP=...) for smoke tests and benchmarks
+single-run: _precheck-idle ## Run and classify one amplitude (AMP=...) for smoke tests
 	@test -n "$(AMP)" || (echo "Usage: make single-run AMP=<amplitude>" && exit 1)
 	$(COMPOSE) exec -T et $(RUNNER) $(RUNNER_ARGS) --single $(AMP)
 
@@ -80,9 +87,9 @@ run-par: _precheck-idle ## Run a parfile as is under the monitor (PAR=..., RUN_N
 	$(COMPOSE) exec -T et $(RUNNER) $(RUNNER_ARGS) --parfile $(PAR) $(if $(RUN_NAME),--run-name $(RUN_NAME))
 
 .PHONY: bisection
-bisection: _precheck-idle ## Run the bisection campaign (A_MIN, A_MAX, MAX_ITER, CAMPAIGN)
+bisection: _precheck-idle ## Run the bisection campaign (A_MIN, A_MAX, MAX_ITER, CAMPAIGN, EXTRA)
 	$(COMPOSE) exec -T et $(RUNNER) $(RUNNER_ARGS)
 
 .PHONY: bisection-resume
-bisection-resume: _precheck-idle ## Resume an interrupted campaign from its bisection_history.json
+bisection-resume: _precheck-idle ## Resume a stopped campaign (EXTRA="--set-outcome ITER=collapse|dispersion" or "--retry")
 	$(COMPOSE) exec -T et $(RUNNER) $(RUNNER_ARGS) --resume
