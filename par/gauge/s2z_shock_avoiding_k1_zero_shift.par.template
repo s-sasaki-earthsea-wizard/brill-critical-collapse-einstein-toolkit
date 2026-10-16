@@ -260,7 +260,11 @@ WeylScal4::WeylScal4_invars_calc_Nth_calc_every = 8
 ActiveThorns = "AHFinderDirect"
 
 AHFinderDirect::N_horizons    = 5
-AHFinderDirect::find_every    = 16
+# Every coarse step (8 iterations, dt = 0.05): at 0.1 a horizon that formed
+# 0.15 before a crash (A = 4.8, eta = 0) got only two of the three finds
+# that confirm a collapse. Keep it a multiple of the coarse step so that
+# all levels are at the same time.
+AHFinderDirect::find_every    = 8
 AHFinderDirect::verbose_level = "physics details"
 
 AHFinderDirect::geometry_interpolator_name = "Lagrange polynomial interpolation"
