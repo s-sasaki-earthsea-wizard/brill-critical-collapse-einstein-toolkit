@@ -199,6 +199,11 @@ A=4.8 で κ=1/2, 1/3 も t=7.7 で crash (κ はほぼ無関係)。**κ=2/3 + �
   (Γ-driver η=1 は 5〜14)。**原点の不安定性は Γ-driver のシフトが関与し、Cartoon2D 自体は無実**。仮説: Cartoon2D で t=0 に未設定の
   Xt のゴースト (Phase 1a の poison の件) の誤差を Γ-driver (∂t β ∝ ∂t Xt) がシフトに流し込む。八分儀テンプレート
   (`templates/brill_octant.par.template`, `par/gauge/octant_s2_k23.par.template`) は Cartoon 版から格子と poison だけ差し替えた下書き
+- **A=4.8、κ=2/3、シフト 0、早期終了あり (CAMPAIGN=zs_k23): collapse、crash なし、t=18.45 に自動停止** (壁時計 64 分)。
+  t=17.25 に ah3 (初期推定 1.5) が AH、M_irr 0.4968 → 0.4960 (t=17.8) → 0.4968、安定判定 0.49685。ah1/ah2 (0.5/1.0) は未検出。
+  座標半径 rmean 1.53 → 1.59 (1.2 で 4 % 膨張、最細箱 r=2 には t≈24 で達する見込み)。lapse は t=13 から下限、AH はその 4 後。
+  η=0 の 0.5425 (t=8.8) より小さいが、別のスライシングの別の面なので直接比較しない。κ=1 シフト 0 の A=5 (0.5756) と並べると
+  A が下がると M_AH が下がる (G2 の方向)。**κ=2/3 + シフト 0 + 早期終了が本番ゲージの第一候補**
 - 判定器: 同時刻に複数の finder が確定したら質量最大 (= 最も外側の MOTS) を選ぶよう修正。C2 は「1 回あたり相対 1e-3」だと
   探索間隔を半分にしたとき時間率として 2 倍に緩むので、**減少率 ≤ 1e-2 / 単位時間** に変更 (2026-10-17)。A=4.8 の内側の MOTS
   (1.8 % / 単位時間) は弾かれ、外側 (M_irr=0.5425) だけが確定する
@@ -308,6 +313,8 @@ A=4.8 で κ=1/2, 1/3 も t=7.7 で crash (κ はほぼ無関係)。**κ=2/3 + �
 - **全ランでメモリ監視と ETA を必須とする**。監視なしで cactus_sim を直接起動しない。
   テンプレート以外の parfile も `make run-par PAR=... RUN_NAME=... CAMPAIGN=...` で監視下で回す
 - cactus_sim の二重起動禁止 (`_precheck-idle`、ゾンビは数えない)
+- 判定器や閾値を変えたら、既存のランは `make reclassify RUN=<コンテナ内のランディレクトリ>` で `run_summary.json` を引き直す
+  (実行の事実は保持、判定が変われば `notes` に記録)。キャンペーンの `bisection_history.json` は触らない (`--set-outcome` で人が決める)
 - 標準 thorn への変更は `patches/*.patch` に置き、`scripts/apply_cactus_patches.sh` が冪等に当てる
   (Dockerfile と `make thorn-build` の両方)。パッチの頭に理由を書く
 - 自作 thorn の開発ループ: `thorns/` を編集 → `make thorn-build` (稼働中コンテナで再コンパイル、約 15 秒)

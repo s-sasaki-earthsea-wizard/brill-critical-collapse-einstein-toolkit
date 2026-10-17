@@ -63,6 +63,19 @@ figures-gauge: ## Render the Phase 2 gauge figures (needs the gauge_*, near*, di
 		--max-coordinate 0.5 --log --ylabel "|Re I|  (curvature)" \
 		--title "A = 4, SA kappa=2/3, eta = 1: an instability grows from the origin" \
 		--out $(FIG_DIR)/eta1_A4_origin_instability.png
+	$(PLOT_RUNS) histories \
+		--run "A=4.8, zero shift=$(SIM_DIR)/zs_k23/single/iter00_A4.8" \
+		--run "A=4.0, zero shift=$(SIM_DIR)/diag_k23z_noes/single/iter00_A4.0" \
+		--run "A=4.8, Gamma-driver eta=0=$(SIM_DIR)/eta0_scan/single/iter00_A4.8" \
+		--run "A=4.0, Gamma-driver eta=1=$(SIM_DIR)/diag_k23_noes/single/iter00_A4.0" \
+		--title "SA kappa=2/3: zero shift survives, the Gamma-driver crashes" \
+		--out $(FIG_DIR)/zero_shift_histories.png
+	$(PLOT_RUNS) horizon \
+		--run "A=4.8, zero shift=$(SIM_DIR)/zs_k23/single/iter00_A4.8" \
+		--run "A=4.8, Gamma-driver eta=0=$(SIM_DIR)/eta0_scan/single/iter00_A4.8" \
+		--run "A=5, kappa=1, zero shift=$(SIM_DIR)/gauge_s2z_wide/single/iter00_A5.0" \
+		--title "Apparent horizon mass with zero shift (SA kappa=2/3 unless noted)" \
+		--out $(FIG_DIR)/zero_shift_horizon_mass.png
 
 wiki-figures: ## Copy reports/figures/*.png into the wiki clone's images/ (WIKI_DIR)
 	@test -d $(WIKI_DIR)/images || { echo "no wiki clone at $(WIKI_DIR)"; exit 1; }
