@@ -108,9 +108,22 @@ def test_earliest_confirmed_finder_wins():
     assert len(verdict.horizons) == 2
 
 
-def test_outer_surface_of_a_pair_wins_a_tie():
+def test_mass_decrease_criterion_is_a_rate():
+    # The same 0.08 % drop per find is 0.8 % per unit time at interval 0.1
+    # (allowed) and 1.6 % per unit time at interval 0.05 (not).
+    masses = [0.54 * (1.0 - 8e-4) ** k for k in range(4)]
+    slow = [(960 + 16 * k, 6.0 + 0.1 * k, m, 0.4, 0.0) for k, m in enumerate(masses)]
+    fast = [(960 + 8 * k, 6.0 + 0.05 * k, m, 0.4, 0.0) for k, m in enumerate(masses)]
+    assert oc.classify(oc.RunInputs(horizons=[track(slow)]), CONFIG).outcome == oc.COLLAPSE
+    verdict = oc.classify(oc.RunInputs(horizons=[track(fast)]), CONFIG)
+    assert verdict.outcome == oc.UNDECIDED
+    assert "per unit time" in verdict.horizons[0].failed
+
+
+def test_inner_surface_of_a_pair_fails_the_rate_criterion():
     # A = 4.8, kappa = 2/3, eta = 0: two origin finders lock onto the inner
-    # (shrinking) and outer (growing) surfaces of a pair born at t ~ 8.8.
+    # (shrinking, 1.8 % per unit time) and outer (growing) surfaces of a
+    # pair born at t ~ 8.8.
     inner = [(1408 + 8 * k, 8.8 + 0.05 * k, m, r, 0.0)
              for k, (m, r) in enumerate([(0.53819, 0.386), (0.53771, 0.380), (0.53735, 0.375)])]
     outer = [(1408 + 8 * k, 8.8 + 0.05 * k, m, r, 0.0)
@@ -120,6 +133,19 @@ def test_outer_surface_of_a_pair_wins_a_tie():
     assert verdict.outcome == oc.COLLAPSE
     assert verdict.horizon.number == 2
     assert verdict.horizon.m_last == pytest.approx(0.54246)
+    assert verdict.horizons[0].t_confirmed is None
+
+
+def test_outer_surface_wins_a_tie():
+    # Both surfaces pass C2 (the inner one drifts down within the rate);
+    # the verdict names the one with the larger mass, not the lower number.
+    inner = [(1408 + 8 * k, 8.8 + 0.05 * k, 0.5400 * (1.0 - 2e-4 * k), 0.38, 0.0) for k in range(3)]
+    outer = [(1408 + 8 * k, 8.8 + 0.05 * k, 0.5409 * (1.0 + 1e-3 * k), 0.42, 0.0) for k in range(3)]
+    inputs = oc.RunInputs(horizons=[track(inner, number=1), track(outer, number=2)])
+    verdict = oc.classify(inputs, CONFIG)
+    assert verdict.outcome == oc.COLLAPSE
+    assert [e.t_confirmed for e in verdict.horizons] == [pytest.approx(8.9)] * 2
+    assert verdict.horizon.number == 2
 
 
 def test_collapse_survives_a_later_crash():

@@ -13,9 +13,11 @@ anything short of either kind of evidence is ``undecided``.
 Collapse (all of)
     C1  one horizon finder found a horizon at ``min_consecutive_finds``
         consecutive find times;
-    C2  its irreducible mass did not drop between those finds by more
-        than ``mass_decrease_tolerance`` (relative), as the area theorem
-        requires of a real dynamical horizon;
+    C2  its irreducible mass did not fall between those finds faster
+        than ``mass_decrease_rate`` (relative, per unit time), as the
+        area theorem requires of a real dynamical horizon. A rate rather
+        than a per-find tolerance, so that the criterion means the same
+        whatever the find interval;
     C3  its minimum coordinate radius was at least ``min_horizon_radius``
         (disabled at 0 until the resolution floor is calibrated).
 
@@ -76,7 +78,7 @@ class ClassifierConfig:
 
     Attributes:
         min_consecutive_finds: C1.
-        mass_decrease_tolerance: C2, relative.
+        mass_decrease_rate: C2, relative, per unit time.
         min_horizon_radius: C3, coordinate radius; 0 disables.
         find_interval: Iterations between horizon finds; ``None`` infers
             it as the smallest gap between finds.
@@ -94,7 +96,7 @@ class ClassifierConfig:
     """
 
     min_consecutive_finds: int = 3
-    mass_decrease_tolerance: float = 1.0e-3
+    mass_decrease_rate: float = 1.0e-2
     min_horizon_radius: float = 0.0
     find_interval: Optional[int] = None
     settle_rate_window: float = 1.0
@@ -315,15 +317,18 @@ def horizon_evidence(track: HorizonTrack, interval: Optional[int], config: Class
         else:
             consecutive = s.iterations[k] - s.iterations[k - 1] == interval
             drop = (s.irreducible_masses[k - 1] - s.irreducible_masses[k]) / s.irreducible_masses[k - 1]
-            if not (consecutive and drop <= config.mass_decrease_tolerance):
+            dt = s.times[k] - s.times[k - 1]
+            rate = drop / dt if dt > 0.0 else float("inf")
+            if not (consecutive and rate <= config.mass_decrease_rate):
                 streak_start = k
         if k - streak_start + 1 >= need:
             evidence.t_confirmed = s.times[k]
             confirmed_from = streak_start
             break
     else:
-        evidence.failed = "no {} consecutive finds with non-decreasing mass{}".format(
-            need, "" if config.min_horizon_radius == 0.0 else " and radius >= {}".format(config.min_horizon_radius)
+        evidence.failed = "no {} consecutive finds with the mass falling at most {:g} per unit time{}".format(
+            need, config.mass_decrease_rate,
+            "" if config.min_horizon_radius == 0.0 else " and radius >= {}".format(config.min_horizon_radius),
         )
         return evidence
 
