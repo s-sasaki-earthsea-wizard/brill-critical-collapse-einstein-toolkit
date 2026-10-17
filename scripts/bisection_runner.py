@@ -1219,6 +1219,81 @@ def run_single(args: argparse.Namespace) -> int:
     return 0 if result.outcome in oc.DECISIVE else 2
 
 
+def execution_from_summary(summary: Dict[str, object]) -> ExecutionResult:
+    """Rebuild the execution facts of a finished run from its summary.
+
+    Args:
+        summary: Contents of ``run_summary.json``.
+
+    Returns:
+        The execution result; ``describe_execution`` of it reproduces the
+        summary's ``execution`` line.
+    """
+    ended = str(summary.get("execution", ""))
+    return ExecutionResult(
+        exit_code=summary.get("exit_code"),
+        wall_seconds=float(summary.get("wall_seconds") or 0.0),
+        peak_memory_bytes=summary.get("peak_memory_bytes"),
+        guard_tripped=ended.startswith("oom (memory guard"),
+        oom_killed=ended.startswith("oom (kernel"),
+        timed_out=ended == "timeout",
+        last_iteration=None,
+        t_reached=summary.get("t_reached"),
+        rate_per_hour=None,
+        stop_reason=summary.get("stop_reason"),
+    )
+
+
+def reclassify(args: argparse.Namespace) -> int:
+    """Run the classifier again on finished runs and rewrite their summaries.
+
+    For runs classified before the classifier or its thresholds changed.
+    The execution facts (exit code, wall time, memory, how the run ended)
+    are taken from the existing summary; only the verdict and its
+    evidence are recomputed. A changed verdict is noted in ``notes``.
+    Campaign histories (``bisection_history.json``) are left alone: a
+    changed verdict there is a human decision, ``--set-outcome``.
+
+    Args:
+        args: Parsed command line; ``args.reclassify`` lists run directories.
+
+    Returns:
+        Process exit code: 0 when every summary was rewritten.
+    """
+    config = load_classifier_config(args.classifier_config)
+    status = 0
+    for run_dir in args.reclassify:
+        summary_path = run_dir / RUN_SUMMARY_NAME
+        if not summary_path.exists():
+            print("error: no {} in {}".format(RUN_SUMMARY_NAME, run_dir), file=sys.stderr)
+            status = 1
+            continue
+        old = json.loads(summary_path.read_text())
+        if "iteration" not in old or "amplitude" not in old:
+            print("error: {} was not classified (a --parfile run?)".format(summary_path), file=sys.stderr)
+            status = 1
+            continue
+        result = classify_run(
+            int(old["iteration"]), float(old["amplitude"]), run_dir, execution_from_summary(old), config,
+            str(old.get("role", "single")),
+        )
+        for name in ("started_at", "finished_at", "human_override", "notes"):
+            if name in old:
+                setattr(result, name, old[name])
+        changed = (old.get("outcome"), old.get("horizon_number")) != (result.outcome, result.horizon_number)
+        if changed:
+            note = "reclassified {}: was {} (horizon {}, M_irr {})".format(
+                now_iso(), old.get("outcome"), old.get("horizon_number"), old.get("m_ah_final"))
+            result.notes = "{}; {}".format(result.notes, note) if result.notes else note
+        summary = asdict(result)
+        summary["command"] = old.get("command")
+        summary["execution"] = old.get("execution")
+        summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+        print("[runner] {}: {} ({}){}".format(
+            run_dir, result.outcome, "; ".join(result.reasons) or "-", " [changed]" if changed else ""))
+    return status
+
+
 # ---------------------------------------------------------------------
 # Command line
 # ---------------------------------------------------------------------
@@ -1316,6 +1391,10 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--parfile", type=Path, metavar="PAR",
         help="run this parfile as is under the monitor (feasibility tests, benchmarks)",
     )
+    mode.add_argument(
+        "--reclassify", type=Path, nargs="+", metavar="RUN_DIR",
+        help="classify these finished runs again with the current classifier and rewrite their summaries",
+    )
     parser.add_argument(
         "--run-name", metavar="NAME",
         help="run directory name for --parfile (default: the parfile stem)",
@@ -1362,6 +1441,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[List[str]] = None) -> int:
     """Entry point."""
     args = parse_args(argv)
+    if args.reclassify:
+        return reclassify(args)
     if args.parfile is not None:
         return run_parfile(args)
     if args.dry_run:

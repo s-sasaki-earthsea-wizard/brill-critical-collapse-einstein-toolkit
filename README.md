@@ -107,6 +107,7 @@ make bisection EXTRA="--verify-endpoints"       # check both ends, then bisect (
 make status                                     # current amplitude, run and campaign ETA, memory
 make bisection-resume EXTRA="--set-outcome 3=collapse"   # after a stop: record a human verdict
 make analyze                                    # gamma on both sides, reports/critical_scaling.png
+make reclassify RUN=/home/etuser/simulations/<campaign>/single/iter00_A4.8   # after a classifier change
 ```
 
 Figures for the wiki (rendered into `reports/figures/`, which is gitignored):

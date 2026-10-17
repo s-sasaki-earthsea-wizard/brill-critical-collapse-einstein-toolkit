@@ -273,6 +273,29 @@ def test_single_run_is_classified(tmp_path, monkeypatch):
     assert (tmp_path / "campaign" / "single" / "iter00_A5.5" / br.RUN_SUMMARY_NAME).exists()
 
 
+def test_reclassify_rewrites_the_verdict_but_keeps_the_facts(tmp_path, monkeypatch):
+    monkeypatch.setattr(br, "execute_run", fake_executor(physical_outcome, []))
+    assert br.run_single(make_args(tmp_path, "--single", "5.5")) == 0
+    summary_path = tmp_path / "campaign" / "single" / "iter00_A5.5" / br.RUN_SUMMARY_NAME
+    summary = json.loads(summary_path.read_text())
+    summary.update({"outcome": oc.UNDECIDED, "horizon_number": None, "m_ah_final": None})
+    summary_path.write_text(json.dumps(summary))
+
+    assert br.main(["--reclassify", str(summary_path.parent)]) == 0
+    redone = json.loads(summary_path.read_text())
+    assert redone["outcome"] == oc.COLLAPSE
+    assert redone["horizon_number"] == 1
+    assert redone["wall_seconds"] == 60.0
+    assert redone["execution"] == summary["execution"]
+    assert "reclassified" in redone["notes"] and "was undecided" in redone["notes"]
+
+    strict = tmp_path / "strict.json"
+    strict.write_text('{"min_consecutive_finds": 1000}')
+    assert br.main(["--reclassify", str(summary_path.parent), "--classifier-config", str(strict)]) == 0
+    assert json.loads(summary_path.read_text())["outcome"] == oc.UNDECIDED
+    assert br.main(["--reclassify", str(tmp_path / "nowhere")]) == 1
+
+
 def test_table_template_generates_initial_data(tmp_path):
     template = tmp_path / "table.par"
     template.write_text(TEMPLATE + 'BrillPsiTable::table_file = "__TABLE_FILE__"\n')
